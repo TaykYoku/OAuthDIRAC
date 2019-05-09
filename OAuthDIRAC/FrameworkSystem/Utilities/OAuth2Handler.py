@@ -11,11 +11,12 @@ from tornado import web, gen
 from tornado.template import Template
 
 from DIRAC import S_OK, S_ERROR, gConfig, gLogger
-from DIRAC.Core.HTTP.Lib.WebHandler import WebHandler, asyncGen
 from DIRAC.FrameworkSystem.Utilities.OAuth2 import OAuth2
-from DIRAC.FrameworkSystem.Client.OAuthClient import OAuthManagerClient
+from DIRAC.FrameworkSystem.Client.OAuthManagerClient import OAuthManagerClient
 from DIRAC.FrameworkSystem.Client.NotificationClient import NotificationClient
 from DIRAC.ConfigurationSystem.Client.Utilities import getOAuthAPI
+
+from WebAppDIRAC.WebApp.Lib.WebHandler import WebHandler, asyncGen
 
 gOAuthCli = OAuthManagerClient()
 

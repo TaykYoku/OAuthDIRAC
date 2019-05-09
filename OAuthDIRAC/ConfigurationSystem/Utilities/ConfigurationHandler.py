@@ -11,7 +11,8 @@ from tornado import web, gen
 from tornado.template import Template
 
 from DIRAC import S_OK, S_ERROR, gConfig, gLogger
-from DIRAC.Core.HTTP.Lib.WebHandler import WebHandler, asyncGen
+
+from WebAppDIRAC.WebApp.Lib.WebHandler import WebHandler, asyncGen
 
 
 class ConfigurationHandler(WebHandler):
