@@ -16,7 +16,7 @@ from DIRAC.FrameworkSystem.Client.OAuthManagerClient import OAuthManagerClient
 from DIRAC.FrameworkSystem.Client.NotificationClient import NotificationClient
 from DIRAC.ConfigurationSystem.Client.Utilities import getOAuthAPI
 
-from WebAppDIRAC.WebApp.Lib.WebHandler import WebHandler, asyncGen
+from WebAppDIRAC.Lib.WebHandler import WebHandler, asyncGen
 
 gOAuthCli = OAuthManagerClient()
 
