@@ -12,7 +12,7 @@ from tornado.template import Template
 
 from DIRAC import S_OK, S_ERROR, gConfig, gLogger
 
-from WebAppDIRAC.WebApp.Lib.WebHandler import WebHandler, asyncGen
+from WebAppDIRAC.Lib.WebHandler import WebHandler, asyncGen
 
 
 class ConfigurationHandler(WebHandler):
