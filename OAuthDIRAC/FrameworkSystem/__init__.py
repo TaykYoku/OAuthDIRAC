@@ -1,1 +1,1 @@
-__RCSID__ = "$Id$"
+__RCSID__ = "ca77183 (2019-05-07 17:37:27 +0300) Andrii Lytovchenko <lytovchenko@cppm.in2p3.fr>"

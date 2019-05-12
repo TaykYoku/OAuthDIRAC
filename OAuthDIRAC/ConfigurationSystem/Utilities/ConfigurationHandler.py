@@ -1,8 +1,6 @@
 """ HTTP API of the DIRAC configuration data
 """
 
-__RCSID__ = "$Id$"
-
 import json
 import time
 import tornado
@@ -14,18 +12,26 @@ from DIRAC import S_OK, S_ERROR, gConfig, gLogger
 
 from WebAppDIRAC.Lib.WebHandler import WebHandler, asyncGen
 
+__RCSID__ = "$Id$"
+
 
 class ConfigurationHandler(WebHandler):
   OFF = False
   AUTH_PROPS = "all"
-  LOCATION = "/configuration"
+  LOCATION = "configuration"
 
   @asyncGen
   def web_get(self):
-    """ Method to getting some configuration information
-    :return: requested data
+    """ Authentication endpoint, used to:
+          get configuration information, with arguments:
+           option - path to opinion with opinion name, e.g /DIRAC/Extensions
+           options - section path where need to get list of opinions
+           section - section path to get dict of all opinions, values there
+           sections - section path where need to get list of sections
+        
+        :return: json with requested data
     """
-    gLogger.debug('Get CS request:\n %s' % self.request)
+    gLogger.notice('Get CS request:\n %s' % self.request)
     args = self.request.arguments
     if args.get('option'):
       path = args['option'][0]
@@ -56,5 +62,6 @@ class ConfigurationHandler(WebHandler):
 
   @asyncGen
   def post(self):
-    """ Post method """
+    """ Post method
+    """
     pass
