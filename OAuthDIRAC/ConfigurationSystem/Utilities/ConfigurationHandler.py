@@ -31,28 +31,27 @@ class ConfigurationHandler(WebHandler):
         
         :return: json with requested data
     """
-    gLogger.notice('Get CS request:\n %s' % self.request)
     args = self.request.arguments
-    if args.get('option'):
-      path = args['option'][0]
+    key = args.keys()[0]
+    path = args.values()[0][0]
+    gLogger.notice('Request configuration information')
+
+    if key == 'option':
       result = yield self.threadTask(gConfig.getOption, path)
       if not result['OK']:
         raise tornado.web.HTTPError(404, result['Message'])
       self.finish(json.dumps(result['Value']))
-    elif args.get('section'):
-      path = args['section'][0]
+    elif key == 'section':
       result = yield self.threadTask(gConfig.getOptionsDict, path)
       if not result['OK']:
         raise tornado.web.HTTPError(404, result['Message'])
       self.finish(json.dumps(result['Value']))
-    elif args.get('options'):
-      path = args['options'][0]
+    elif key == 'options':
       result = yield self.threadTask(gConfig.getOptions, path)
       if not result['OK']:
         raise tornado.web.HTTPError(404, result['Message'])
       self.finish(json.dumps(result['Value']))
-    elif args.get('sections'):
-      path = args['sections'][0]
+    elif key == 'sections':
       result = yield self.threadTask(gConfig.getSections, path)
       if not result['OK']:
         raise tornado.web.HTTPError(404, result['Message'])

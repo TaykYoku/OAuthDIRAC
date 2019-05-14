@@ -422,6 +422,7 @@ class ProxyInit(object):
         gLogger.notice('%s\n' % url)
         if self.__piParams.addQRcode:
           qrterminal(url)
+
     # Loop: waiting status of request
     threading.Thread(target=loading).start()
     addVOMS = self.__piParams.addVOMSExt or Registry.getGroupOption(self.__piParams.diracGroup, "AutoAddVOMS", False)
@@ -430,17 +431,19 @@ class ProxyInit(object):
                       proxyLifeTime=self.__piParams.proxyLifeTime, voms=addVOMS)
     done = True
     time.sleep(1)
-    # End loop
     if not res['OK']:
       gLogger.error(res['Message'])
       sys.exit(1)
     result = res['Value']
+
+    # Read response result
     if not result['OK']:
       gLogger.error(result['Message'])
       sys.exit(1)
-    if result['Value']['Status'] == 'visitor':
+    if not result['Value']['Status'] == 'authed':
       gLogger.notice(result['Value']['Message'])
       sys.exit(1)
+
     if not self.__piParams.proxyLoc:
       self.__piParams.proxyLoc = '/tmp/x509up_u%s' % os.getuid()
     try:

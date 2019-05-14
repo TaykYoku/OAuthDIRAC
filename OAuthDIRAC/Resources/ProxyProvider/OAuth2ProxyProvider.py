@@ -1,12 +1,11 @@
-""" ProxyProvider implementation for the proxy generation using local (DIRAC)
-    CA credentials
+""" ProxyProvider implementation for the proxy generation using OIDC flow
 """
 
 import os
-import commands
 import glob
 import shutil
 import tempfile
+import commands
 
 from DIRAC import S_OK, S_ERROR
 from DIRAC.Resources.ProxyProvider.ProxyProvider import ProxyProvider
@@ -18,11 +17,11 @@ from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import OAuthManagerCli
 __RCSID__ = "$Id$"
 
 
-class OAuthProxyProvider(ProxyProvider):
+class OAuth2ProxyProvider(ProxyProvider):
 
   def __init__(self, parameters=None):
 
-    super(OAuthProxyProvider, self).__init__(parameters)
+    super(OAuth2ProxyProvider, self).__init__(parameters)
 
   def getProxy(self, userDict):
     """ Generate user proxy
@@ -31,8 +30,11 @@ class OAuthProxyProvider(ProxyProvider):
                               FullName, UserName, DN, EMail, DiracGroup
         :return: S_OK/S_ERROR, Value is a proxy string
     """
+    if 'ProxyProviderName' not in self.parameters:
+      return S_ERROR('No found ProxyProviderName option')
+
     # Create proxy
-    result = OAuthManagerClient().getStringProxy(proxyProvider, userDict)
+    result = OAuthManagerClient().getStringProxy(self.parameters['ProxyProviderName'], userDict)
     if not result['OK']:
       return result
     proxyStr = result['Value']
@@ -62,7 +64,15 @@ class OAuthProxyProvider(ProxyProvider):
         :param dict userDict:
         :return: S_OK/S_ERROR, Value is the DN string
     """
-    if "DN" in userDict:
-      return S_OK(userDict['DN'])
+    if 'ProxyProviderName' not in self.parameters:
+      return S_ERROR('No found ProxyProviderName option')
 
-    return OAuthManagerClient().getUserDN(proxyProvider, userDict)
+    result = OAuthManagerClient().getUserDN(self.parameters['ProxyProviderName'], userDict)
+    
+    if result['OK'] and 'DN' in userDict:
+      if userDict['DN'] == result['Value']:
+        result = S_OK(userDict['DN'])
+      else:
+        result = S_ERROR('%s is not match with DN %s that from genrated proxy' % (userDict['DN'], result['Value']))
+
+    return result

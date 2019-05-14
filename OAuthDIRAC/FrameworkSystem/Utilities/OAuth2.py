@@ -77,61 +77,53 @@ class OIDCClient(requests.Session):
                scope=[], issuer=None, authorization_endpoint=None, token_endpoint=None,
                introspection_endpoint=None, proxy_endpoint=None, max_proxylifetime=None,
                response_types_supported=None, grant_types_supported=None, revocation_endpoint=None,
-               userinfo_endpoint=None, jwks_uri=None, registration_endpoint=None, **kwargs):
-    """ OIDCClient constructor """
+               userinfo_endpoint=None, jwks_uri=None, registration_endpoint=None, prompt=None,
+               scopes_supported=None, addDict={}):
+    """ OIDCClient constructor
+    """
+    __optns = {}
 
-    optns = {}
-    if isinstance(idp,dict):
-      for key, value in idp.iteritems():
-        optns[key] = value
-      idp = None
-    elif Resources.getIdPDict(idp)['OK']:
-      optns = Resources.getIdPDict(idp)['Value']
-    elif Resources.getProxyProviderDict(idp)['OK']:
-      optns = Resources.getProxyProviderDict(idp)['Value']
-    if kwargs is not None:
-      for key, value in kwargs.iteritems():
-        optns[key] = value
+    # Provider name
+    self.idp = idp or addDict.get('ProxyProviderName')
+    
+    # Get information from CS
+    result = Resources.getIdPDict(idp)
+    if not result['OK']:
+      result = Resources.getProxyProviderDict(idp)
+    __csDict = result.get('Value') or {}
 
-    self.issuer = issuer or 'issuer' in optns and optns['issuer']
+    # Get configuration from providers server
+    self.issuer = issuer or addDict.get('issuer') or __csDict.get('issuer')
     if self.issuer:
-      remoteIdPDict = getIdPWellKnownDict(issuer=self.issuer)
-      print('remoteIdPDict')
-      print(remoteIdPDict)
-      if remoteIdPDict['OK'] and isinstance(remoteIdPDict['Value'],dict):
-        print('is a dict')
-        print(remoteIdPDict['Value'])
-        for key, value in remoteIdPDict['Value'].iteritems():
-          optns[key] = value
+      result = getIdPWellKnownDict(oauthProvider=self.idp, issuer=self.issuer)
+      if result['OK']:
+        if isinstance(result['Value'], dict):
+          __optns = result['Value']
 
-    self.name = idp or 'idp' in optns and optns['idp']
-    self.client_id = client_id or 'client_id' in optns and optns['client_id']
+    for d in [__csDict, addDict]:
+      for key, value in d.iteritems():
+        __optns[key] = value
+
+    self.name = idp
+    self.client_id = client_id or __optns.get('client_id')
     if not self.client_id:
       raise Exception('client_id parameter is absent.')
-    self.scope = scope or 'scope' in optns and optns['scope'].split(',') or []
-    if 'scopes_supported' in optns:
-      self.scope += optns['scopes_supported']
-    
-    self.redirect_uri = redirect_uri or \
-        'redirect_uri' in optns and optns['redirect_uri'] or None
-    self.client_secret = client_secret or \
-        'client_secret' in optns and optns['client_secret'] or None
-    self.token_endpoint = token_endpoint or \
-        'token_endpoint' in optns and optns['token_endpoint'] or None
-    self.proxy_endpoint = proxy_endpoint or \
-        'proxy_endpoint' in optns and optns['proxy_endpoint'] or None
-    self.userinfo_endpoint = userinfo_endpoint or \
-        'userinfo_endpoint' in optns and optns['userinfo_endpoint'] or None
-    self.max_proxylifetime = max_proxylifetime or \
-        'max_proxylifetime' in optns and optns['max_proxylifetime'] or 86400
-    self.revocation_endpoint = revocation_endpoint or \
-        'revocation_endpoint' in optns and optns['revocation_endpoint'] or None
-    self.registration_endpoint = registration_endpoint or \
-        'registration_endpoint' in optns and optns['registration_endpoint'] or None
-    self.authorization_endpoint = authorization_endpoint or \
-        'authorization_endpoint' in optns and optns['authorization_endpoint'] or None
-    self.introspection_endpoint = introspection_endpoint or \
-        'introspection_endpoint' in optns and optns['introspection_endpoint'] or None
+    self.scope = scope or __optns.get('scope') or []
+    if not isinstance(self.scope,list):
+      self.scope = self.scope.split(',')
+    self.scope += __optns.get('scopes_supported') or []
+    self.prompt = prompt or __optns.get('prompt')
+    self.redirect_uri = redirect_uri or __optns.get('redirect_uri')
+    self.client_secret = client_secret or __optns.get('client_secret')
+    self.token_endpoint = token_endpoint or __optns.get('token_endpoint')
+    self.proxy_endpoint = proxy_endpoint or __optns.get('proxy_endpoint')
+    self.scopes_supported = scopes_supported or __optns.get('scopes_supported')
+    self.userinfo_endpoint = userinfo_endpoint or __optns.get('userinfo_endpoint')
+    self.max_proxylifetime = max_proxylifetime or __optns.get('max_proxylifetime') or 86400
+    self.revocation_endpoint = revocation_endpoint or __optns.get('revocation_endpoint')
+    self.registration_endpoint = registration_endpoint or __optns.get('registration_endpoint')
+    self.authorization_endpoint = authorization_endpoint or __optns.get('authorization_endpoint')
+    self.introspection_endpoint = introspection_endpoint or __optns.get('introspection_endpoint')
 
 
 class OAuth2(OIDCClient):
@@ -139,35 +131,37 @@ class OAuth2(OIDCClient):
   def __init__(self, idp=None, state=None, client_id=None, client_secret=None, redirect_uri=None,
                scope=[], issuer=None, authorization_endpoint=None, token_endpoint=None, introspection_endpoint=None,
                proxy_endpoint=None, max_proxylifetime=None, response_types_supported=None, grant_types_supported=None,
-               revocation_endpoint=None, userinfo_endpoint=None, jwks_uri=None, registration_endpoint=None, **kwargs):
-    """ OAuth2 constructor """
+               revocation_endpoint=None, userinfo_endpoint=None, jwks_uri=None, registration_endpoint=None, prompt=None,
+               scopes_supported=None, addDict={}):
+    """ OAuth2 constructor
+    """
 
     super(OAuth2, self).__init__(idp, client_id, client_secret, redirect_uri, scope, issuer, proxy_endpoint,
                                  max_proxylifetime, authorization_endpoint, token_endpoint, introspection_endpoint,
                                  response_types_supported, grant_types_supported, revocation_endpoint,
-                                 userinfo_endpoint, jwks_uri, registration_endpoint, **kwargs)
+                                 userinfo_endpoint, jwks_uri, registration_endpoint, prompt, scopes_supported,
+                                 addDict={})
+
     self.state = state or self.createState()
-    self.idp = idp
     oauthAPI = getOAuthAPI()
     if oauthAPI:
       self.redirect_uri = '%s/redirect' % oauthAPI
-    gLogger.notice('OAuthProvider %s' % self.name)
-    gLogger.notice('OAuthProvider %s' % self.name)
 
   def createAuthRequestURL(self, **kwargs):
     """ Create link for authorization and state of authorization session
 
         :param basestring,list `**kwargs`: OAuth2 parameters that will be added to request url,
-            e.g. **{authorization_endpoint='http://domain.ua/auth', scope=['openid','profile']}
+          e.g. **{authorization_endpoint='http://domain.ua/auth', scope=['openid','profile']}
         :return: basestring url, basestring state
     """
-    authURL = 'authorization_endpoint' in kwargs and kwargs['authorization_endpoint'] or \
-        self.authorization_endpoint
-    url = '%s?state=%s&response_type=code&client_id=%s&access_type=offline&prompt=consent' % \
+    gLogger.info('Create auth URL..')
+    authURL = kwargs.get('authorization_endpoint') or self.authorization_endpoint
+    url = '%s?state=%s&response_type=code&client_id=%s&access_type=offline' % \
         (authURL, self.state, self.client_id)
-    if 'redirect_uri' not in kwargs:
-      kwargs['redirect_uri'] = self.redirect_uri
-    kwargs['scope'] = [] if 'scope' not in kwargs else kwargs['scope'] + self.scope
+    if self.prompt:
+      url += '&prompt=%s' % self.prompt
+    kwargs['redirect_uri'] = kwargs.get('redirect_uri') or self.redirect_uri
+    kwargs['scope'] = kwargs.get('scope') or [] + self.scope
     for key in kwargs:
       if isinstance(kwargs[key],list):
         kwargs[key] = '+'.join(kwargs[key])
@@ -181,13 +175,13 @@ class OAuth2(OIDCClient):
         :result: S_OK(dict)/S_ERROR()
     """
     oaDict = {}
+
     # Get tokens
-    gLogger.notice('--OAuth2---GET TOKEN----')
     result = self.fetchToken(code)
     if not result['OK']:
       return result
     oaDict['Tokens'] = result['Value']
-    gLogger.notice('--OAuth2---GET Profile----')
+
     # Get user profile
     result = self.getUserProfile(oaDict['Tokens']['access_token'])
     if not result['OK']:
@@ -206,15 +200,18 @@ class OAuth2(OIDCClient):
             e.g. **{authorization_endpoint='http://domain.ua/auth', scope=['openid','profile']}
         :return: S_OK(basestring)/S_ERROR()
     """
+    # Prepare URL
     proxylifetime = proxylifetime or self.max_proxylifetime
-    url = self.proxy_endpoint or 'proxy_endpoint' in kwargs and kwargs['proxy_endpoint']
+    url = self.proxy_endpoint or kwargs.get('proxy_endpoint')
     if not url:
       return S_ERROR('No get proxy endpoind found for %s IdP.' % self.idp)
     client_id = self.client_id
     client_secret = self.client_secret
-    url = '?client_id=%s&client_secret=%s' % (client_id, client_secret)
+    url += '?client_id=%s&client_secret=%s' % (client_id, client_secret)
     url += '&access_token=%s&proxylifetime=%s' % (access_token, proxylifetime)
-    url += '&access_type=offline&prompt=consent'
+    url += '&access_type=offline'
+    if self.prompt:
+      url += "&prompt=consent"
     if voms:
       result = Registry.getVOs()
       if not result['OK']:
@@ -235,6 +232,8 @@ class OAuth2(OIDCClient):
       if isinstance(kwargs[key],list):
         kwargs[key] = '+'.join(kwargs[key])
       url += '&%s=%s' % (key, kwargs[key])
+    
+    # Get proxy request
     gLogger.notice('Get proxy request: %s' % url)
     r = requests.get(url, verify=False)
     if not r.status_code == 200:
@@ -283,7 +282,9 @@ class OAuth2(OIDCClient):
     if not url:
       return S_ERROR('Not found token_endpoint for %s provider' % self.name)
     url += "?client_id=%s&client_secret=%s" % (self.client_id, self.client_secret)
-    url += "&access_type=offline&prompt=consent"
+    url += "&access_type=offline"
+    if self.prompt:
+      url += "&prompt=consent"
     if code:
       if not self.redirect_uri:
         return S_ERROR('Not found redirect_uri for %s provider' % self.name)
@@ -294,7 +295,6 @@ class OAuth2(OIDCClient):
       return S_ERROR('No get any authorization code or refresh token')
     # FIXME: in production need to remove 'verify' parametr
     r = requests.post(url, verify=False)
-    gLogger.notice('Get token URL: %s' % url)
     if not r.status_code == 200:
       return S_ERROR(r.status_code)
     if 'access_token' not in r.json():

@@ -13,6 +13,7 @@ from DIRAC.Core.Base.DB import DB
 from DIRAC.Core.Security.X509Chain import X509Chain
 from DIRAC.ConfigurationSystem.Client.CSAPI import CSAPI
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry, Resources
+from DIRAC.Resources.ProxyProvider.ProxyProviderFactory import ProxyProviderFactory
 
 from OAuthDIRAC.FrameworkSystem.Utilities.OAuth2 import OAuth2, getIdPSyntax
 
@@ -108,7 +109,7 @@ class OAuthDB(DB):
                                          [state, OAuthProvider, url, 'UTC_TIMESTAMP()'])
     if not result['OK']:
       return result
-    gLogger.notice('New %s authorization session for %s provider was created' % (state, OAuthProvider))
+    gLogger.notice('%s authorization session was created' % state)
     return S_OK({'url': url, 'state': state})
 
   def getLinkByState(self, state):
@@ -118,7 +119,7 @@ class OAuthDB(DB):
         :return: S_OK(basestring)/S_ERROR()
     """
     result = self.__getFromWhere('Comment', 'Tokens', State=state,
-                                conn='Status = "prepared" and TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) < 300')
+                                 conn='Status = "prepared" and TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) < 300')
     if not result['OK']:
       return result
     if result['Value'] is None:
@@ -134,13 +135,6 @@ class OAuthDB(DB):
     """
     __conn = ''
     __params = {'OAuthProvider': proxyProvider}
-    DN = 'DN' in userDict and userDict['DN']
-    voms = 'voms' in userDict and userDict['voms']
-    state = 'state' in userDict and userDict['state']
-    userID = 'userID' in userDict and userDict['userID']
-    username = 'username' in userDict and userDict['username']
-    access_token = 'access_token' in userDict and userDict['access_token']
-    proxylivetime = 'proxylivetime' in userDict and userDict['proxylivetime']
     
     # Check provider
     result = Resources.getProxyProviders()
@@ -150,19 +144,20 @@ class OAuthDB(DB):
       return S_ERROR('%s is not proxy provider.' % proxyProvider)
     
     # We need access token to continue
+    access_token = userDict.get('access_token')
     if not access_token:
-      if state:
-        __params['State'] = state
+      if userDict.get('state'):
+        __params['State'] = userDict.get('state')
       else:
         __conn += 'Status = "authed"'
-        if DN:
-          __params['UserDN'] = DN
-        elif username:
-          __params['UserName'] = username
+        if userDict.get('DN'):
+          __params['UserDN'] = userDict.get('DN')
+        elif userDict.get('username'):
+          __params['UserName'] = userDict.get('username')
         else:
           return S_ERROR('DN or username need to set.')
-        if userID:
-          __params['Sub'] = userID
+        if userDict.get('UserID'):
+          __params['Sub'] = userDict.get('UserID')
       gLogger.notice('Search access token for proxy request')
 
       # Search access tokens
@@ -186,7 +181,7 @@ class OAuthDB(DB):
         return S_ERROR('No working access token found')
 
     # Get proxy request
-    result = OAuth2(proxyProvider).getProxy(access_token, proxylivetime, voms)
+    result = OAuth2(proxyProvider).getProxy(access_token, userDict.get('proxylivetime'), userDict.get('voms'))
     if not result['OK']:
       return result
     gLogger.info('Proxy is taken')
@@ -272,7 +267,7 @@ class OAuthDB(DB):
     self.__oauth = OAuth2(OAuthProvider)
 
     # Parsing response
-    gLogger.info('%s: Parsing authentification response.' % state)
+    gLogger.info('%s session, parsing authentification response.' % state)
     result = self.__oauth.parseAuthResponse(code)
     if not result['OK']:
       __statusComment(result['Message'])
@@ -294,7 +289,7 @@ class OAuthDB(DB):
 
     if OAuthProvider in Resources.getProxyProviders()['Value']:
       # For proxy provider
-      gLogger.info('%s: Proxy provider: %s' % (state, OAuthProvider))
+      gLogger.info('%s session of "%s" proxy provider' % (state, OAuthProvider))
       result = self.__getFromWhere('Comment', 'Tokens', State=state.replace('_proxy', ''))
       if not result['OK']:
         __statusComment(result['Message'])
@@ -339,7 +334,7 @@ class OAuthDB(DB):
 
     elif OAuthProvider in Resources.getIdPs()['Value']:
       # For identity provider
-      gLogger.info('%s: Identity provider: %s' % (state, OAuthProvider))
+      gLogger.info('%s session of "%s" identity provider' % (state, OAuthProvider))
       result = self.prepareUserParameters(OAuthProvider, **oauthDict['UserProfile'])
       if not result['OK']:
         __statusComment(result['Message'])
@@ -356,25 +351,31 @@ class OAuthDB(DB):
         
         if proxyProvider:
           # Looking DN in user configuration
-          gLogger.notice('Search user DN in configuration')
+          gLogger.info('%s session, try to get user DN from configuration' % state)
           result = Registry.getDNFromProxyProviderForUserID(proxyProvider, oauthDict['UserProfile']['sub'])
           
           if not result['OK']:
-            # Try to get DN from proxy provider as default
-            gLogger.notice('Getting user DN throught %s proxy provider as default' % proxyProvider)
-            result = ProxyProviderFactory().getProxyProvider(proxyProvider)
-            if not result['OK']:
-              __statusComment(result['Message'])
-              return result
-            providerObj = result['Value']
-            userDict = {"username": csModDict['username'], 
-                        "userID": csModDict['UsrOptns']['ID']}
-            result = providerObj.getDN(userDict)
+            gLogger.debug(result['Message'])
           
-          if result['OK']:
+          # Try to get/check DN from proxy provider as default
+          proxyDN = result.get('Value')
+          gLogger.info('%s session, try to get/check user DN throught "%s" as default' % (state, proxyProvider))
+          result = ProxyProviderFactory().getProxyProvider(proxyProvider)
+          if not result['OK']:
+            __statusComment(result['Message'])
+            return result
+          providerObj = result['Value']
+          userDict = {"DN": proxyDN,
+                      "FullName": csModDict['username'], 
+                      "UserID": csModDict['UsrOptns']['ID'],
+                      "EMail": csModDict['UsrOptns']['EMail']}
+          result = providerObj.getUserDN(userDict)
+          proxyDN = result.get('Value')
+          gLogger.info('DN result: ')
+          gLogger.info(result)
+          if proxyDN:
             # Add DN to user parameters
-            proxyDN = result['Value']
-            gLogger.notice('DN is %s' % proxyDN)
+            gLogger.info('%s session, user DN is %s' % (state, proxyDN))
             if proxyDN not in csModDict['UsrOptns']['DN']:
               csModDict['UsrOptns']['DN'].append(proxyDN)
             csModDict['UsrOptns']['DN'] = ','.join(csModDict['UsrOptns']['DN'])
@@ -382,26 +383,27 @@ class OAuthDB(DB):
               __statusComment('Cannot found any groups in IdP record field')
               return S_ERROR('Cannot found any groups in IdP record field')
             secDN = proxyDN.replace('/', '-').replace('=', '_')
+            print(csModDict)
             csModDict['UsrOptns']['DNProperties/%s/Groups' % secDN] = ','.join(csModDict['UsrOptns']['Groups'])
             csModDict['UsrOptns']['DNProperties/%s/ProxyProviders' % secDN] = proxyProvider
             result = self.updateFields('Tokens', ['UserDN', 'LastAccess'],
                                                   [proxyDN, 'UTC_TIMESTAMP()'],
-                                        {'State': state})
+                                       {'State': state})
             if not result['OK']:
               __statusComment(result['Message'])
               return result
           
-          elif Resources.getProxyProviderOption(proxyProvider, 'method') == 'oAuth2':
+          elif Resources.getProxyProviderOption(proxyProvider, 'ProxyProviderType') == 'OAuth2':
             # If cannot get DN and proxy provider with OIDC authorization flow
             #   need to initialize new OIDC authorization flow
-            gLogger.notice('Initialize new authorization flow to %s provider to get user DN' % proxyProvider)
+            gLogger.info('%s session, initialize "%s" authorization flow to get user DN' % (state, OAuthProvider))
             result = self.getAuthorizationURL(proxyProvider, state + '_proxy')
             if not result['OK']:
               __statusComment(result['Message'])
               return result
             oauthDict['redirect'] = result['Value']['url']
             comment = json.dumps(csModDict)
-          elif not csModDict['UsrOptns']['DN']:
+          else:
             __statusComment('No DN returned from %s OAuth provider' % OAuthProvider)
             return S_ERROR('No DN returned from %s OAuth provider' % OAuthProvider)
         elif not csModDict['UsrOptns']['DN']:
@@ -423,7 +425,7 @@ class OAuthDB(DB):
 
     if not oauthDict['redirect']:
       # If not need additional authorization to proxy provider add new user to CS or modify existed
-      gLogger.notice("%s: Prepring parameters for registeration new DIRAC user:\n %s" % (state, csModDict))
+      gLogger.notice("%s session, prepere user parameters: %s" % (state, csModDict))
       if 'noregvos' in csModDict:
         msg = '%s unsupported by DIRAC. ' % str(csModDict['noregvos'])
         msg += 'Please contact with administrators of this VOs to register it in DIRAC.'
@@ -453,7 +455,7 @@ class OAuthDB(DB):
         :result: S_OK(dict)/S_ERROR()
     """
     result = self.updateFields('Tokens', ['LastAccess'], ['UTC_TIMESTAMP()'], {'State': state})
-    if not resul['OK']:
+    if not result['OK']:
       return result
     if not isinstance(value,list):
       value = list(value)
@@ -493,13 +495,13 @@ class OAuthDB(DB):
     params = {'Status': 'authed'}
     if state:
       params['State'] = state
-      gLogger.notice('Fetching tokens in %s session' % state)
+      gLogger.notice('%s session, fetching tokens' % state)
     elif accessToken:
       params['Access_token'] = accessToken
       gLogger.notice('Fetching tokens by access token')
     else:
       return S_ERROR('Need set access token or state')
-    gLogger.notice('Search session record')
+    gLogger.notice('Search session records')
     result = self.__getListFromWhere(['Access_token', 'Expires_in', 'Refresh_token', 'OAuthProvider', 'State'],
                                     'Tokens', **params)
     if not result['OK']:
@@ -515,7 +517,7 @@ class OAuthDB(DB):
       if not result['OK']:
         return result
       timeLeft = result['Value']
-    gLogger.notice('Left seconds of access token: %s' % str(timeLeft))
+    gLogger.notice('Left %s seconds of access token' % str(timeLeft))
     tD = {}
     
     if timeLeft < 1800:
@@ -523,7 +525,7 @@ class OAuthDB(DB):
       result = OAuth2(resD['OAuthProvider']).fetchToken(refresh_token=resD['Refresh_token'])
       if not result['OK']:
         return result
-      gLogger.notice('Fechted from %s proxy provider' % resD['OAuthProvider'])
+      gLogger.notice('Tokens successfully updated from "%s" proxy provider' % resD['OAuthProvider'])
       tD = result['Value']
       exp_datetime = 'UTC_TIMESTAMP()'
       if 'expires_in' in tD:
@@ -531,12 +533,11 @@ class OAuthDB(DB):
         if not result['OK']:
           return result
         exp_datetime = result['Value']
-      refresh_token = 'refresh_token' in tD and tD['refresh_token'] or None
       result = self.updateFields('Tokens', ['Token_type', 'Access_token', 'Expires_in',
                                             'Refresh_token', 'LastAccess'],
                                            [tD['token_type'], tD['access_token'], exp_datetime,
-                                            refresh_token, 'UTC_TIMESTAMP()'],
-                                 {'Access_token': token})
+                                            tD.get('refresh_token'), 'UTC_TIMESTAMP()'],
+                                 {'Access_token': accessToken or resD['Access_token']})
       if not result['OK']:
         return result
       for k in tD.keys():
@@ -562,7 +563,7 @@ class OAuthDB(DB):
     
     # Set ID, EMail
     prepDict['UsrOptns']['ID'] = kwargs['sub']
-    prepDict['UsrOptns']['Email'] = kwargs['email']
+    prepDict['UsrOptns']['EMail'] = kwargs['email']
     result = gCSAPI.listUsers()
     if not result['OK']:
       return result
@@ -601,9 +602,14 @@ class OAuthDB(DB):
     if 'DN' in kwargs:
       prepDict['UsrOptns']['DN'].append(kwargs['DN'])
     
-    # Parse VO/Role from IdP
+    # Add default group(s) for proxy provider
     defGroup = Resources.getIdPOption(idp, 'dirac_groups')
-    prepDict['UsrOptns']['Groups'].append(defGroup) 
+    if defGroup:
+      if not isinstance(defGroup,list):
+        defGroup = defGroup.replace(' ','').split(',')
+      prepDict['UsrOptns']['Groups'] += defGroup
+
+    # Parse VO/Role from IdP
     result = getIdPSyntax(idp, 'VOMS')
     if result['OK']:
       synDict = result['Value']

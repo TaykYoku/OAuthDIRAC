@@ -58,7 +58,7 @@ class OAuthManagerHandler(RequestHandler):
     """
     return gOAuthDB.getProxy(proxyProvider, userDict)
 
-  types_getStringProxy = [basestring]
+  types_getUserDN = [basestring]
 
   def export_getUserDN(self, proxyProvider, userDict):
     """ Get DN from OAuthDB
@@ -117,7 +117,7 @@ class OAuthManagerHandler(RequestHandler):
         :param int sleeptime: time needed to wait between requests
         :return: S_OK(dict)/S_ERROR
     """
-    gLogger.notice("Read auth status for '%s' state." % state)
+    gLogger.notice("%s session, waiting authorization status" % state)
     start = time.time()
     runtime = 0
     for _i in range(int(int(time_out) // int(sleeptime))):
@@ -127,25 +127,26 @@ class OAuthManagerHandler(RequestHandler):
         gOAuthDB.kill_state(state)
         return S_ERROR('Timeout')
       result = gOAuthDB.getFieldByState(state)
-      gLogger.notice("result: '%s' of state." % state)
-      gLogger.notice(result)
       if not result['OK']:
         return result
-      
+
       # Looking status of OIDC authorization session
       status = result['Value']['Status']
+      comment = result['Value']['Comment']
+      gLogger.notice("%s session %s" % (state, status))
       if status == 'prepared':
         continue
       elif status == 'visitor':
-        return S_OK({'Status': status, 'Message': result['Value']['Comment']})
+        return S_OK({'Status': status, 'Message': comment})
       elif status == 'failed':
-        return S_ERROR(result['Value']['Comment'])
+        return S_ERROR(comment)
       elif status == 'authed':
         resD = result['Value']
         if not needProxy:
           return result
-        
+
         # Need group to continue
+        gLogger.notice("%s session, try return proxy" % state)
         if not group:
           result = Registry.findDefaultGroupForUser(resD['UserName'])
           if not result['OK']:
@@ -174,8 +175,10 @@ class OAuthManagerHandler(RequestHandler):
           gLogger.notice('Proxy was not created.')
           return result
         gLogger.notice('Proxy was created.')
-        proxyStr = result['Value'].dumpAllToString()
-        return S_OK({'Status': status, 'proxy': proxyStr})
+        result = result['Value'].dumpAllToString()
+        if not result['OK']:
+          return result
+        return S_OK({'Status': status, 'proxy': result['Value']})
       else:
         return S_ERROR('Not correct status of your request')
     return S_ERROR('Timeout')
@@ -188,10 +191,10 @@ class OAuthManagerHandler(RequestHandler):
         :param basestring OAuthProvider: provider name
         :return: S_OK(dict)/S_ERROR()
     """
-    gLogger.notice("Creating authority request uri for '%s' IdP." % idp)
+    gLogger.notice("Creating authority request URL for '%s' IdP." % idp)
     result = gOAuthDB.getAuthorizationURL(idp)
     if not result['OK']:
-      return S_ERROR('Cannot create authority request uri.')
+      return S_ERROR('Cannot create authority request URL.')
     return result
 
   types_parseAuthResponse = [basestring]
@@ -205,7 +208,7 @@ class OAuthManagerHandler(RequestHandler):
         :param basestring state: session number
         :return: S_OK(dict)/S_ERROR
     """
-    gLogger.notice("Process on the OIDC authorizetion response(code: %s, state: %s)" % (code, state))
+    gLogger.notice('%s session get response with code "%s" to process' % (state, code))
     return gOAuthDB.parseAuthResponse(code, state)
 
   @staticmethod
