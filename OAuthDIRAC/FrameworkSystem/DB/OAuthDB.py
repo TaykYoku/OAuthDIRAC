@@ -118,8 +118,8 @@ class OAuthDB(DB):
         :param basestring state: session number
         :return: S_OK(basestring)/S_ERROR()
     """
-    result = self.__getFromWhere('Comment', 'Tokens', State=state,
-                                 conn='Status = "prepared" and TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) < 300')
+    __conn='Status = "prepared" and TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) < 300'
+    result = self.__getFromWhere('Comment', State=state, conn=__conn)
     if not result['OK']:
       return result
     if result['Value'] is None:
@@ -256,7 +256,7 @@ class OAuthDB(DB):
     exp_datetime = 'UTC_TIMESTAMP()'
 
     # Search provider
-    result = self.__getFromWhere('OAuthProvider', 'Tokens', State=state)
+    result = self.__getFromWhere('OAuthProvider', State=state)
     if not result['OK']:
       __statusComment(result['Message'])
       return result
@@ -290,7 +290,7 @@ class OAuthDB(DB):
     if OAuthProvider in Resources.getProxyProviders()['Value']:
       # For proxy provider
       gLogger.info('%s session of "%s" proxy provider' % (state, OAuthProvider))
-      result = self.__getFromWhere('Comment', 'Tokens', State=state.replace('_proxy', ''))
+      result = self.__getFromWhere('Comment', State=state.replace('_proxy', ''))
       if not result['OK']:
         __statusComment(result['Message'])
         return result
@@ -459,7 +459,7 @@ class OAuthDB(DB):
       return result
     if not isinstance(value,list):
       value = list(value)
-    return self.__getListFromWhere(value, 'Tokens', State=state)
+    return self.__getListFromWhere(value, State=state)
 
   def killSession(self, state=None, accessToken=None):
     """ Remove session
@@ -473,7 +473,7 @@ class OAuthDB(DB):
       conDict['State'] = state
     if accessToken:
       conDict['Access_token'] = accessToken
-    result = self.__getListFromWhere(['OAuthProvider', 'Access_token', 'Refresh_token', 'State'], 'Tokens', conn=conn)
+    result = self.__getListFromWhere(['OAuthProvider', 'Access_token', 'Refresh_token', 'State'], conn=conDict)
     if not result['OK']:
       return result
     rmDict = result['Value']
@@ -503,7 +503,7 @@ class OAuthDB(DB):
       return S_ERROR('Need set access token or state')
     gLogger.notice('Search session records')
     result = self.__getListFromWhere(['Access_token', 'Expires_in', 'Refresh_token', 'OAuthProvider', 'State'],
-                                    'Tokens', **params)
+                                     **params)
     if not result['OK']:
       return result
     resD = result['Value']
@@ -661,14 +661,19 @@ class OAuthDB(DB):
       return S_ERROR('No "dirac_groups", no Syntax section in configuration file.')
     return S_OK(prepDict)
 
-  def __getFromWhere(self, field='*', table='Tokens', conn='', **kwargs):
+  def __getFromWhere(self, field='*', conn='', **kwargs):
     """ Get field from table where some filter
+
+        :param basestring field: field name
+        :param basestring conn: search filter in records
+        :param basestring `**kwargs`: parameters that need add to search filter
+        :return: S_Ok()/S_ERROR()
     """
     if conn:
       conn += ' and '
     for key in kwargs:
       conn += '%s = "%s" and ' % (key, str(kwargs[key]))
-    result = self._query('SELECT %s FROM %s WHERE %s True' % (field, table, conn))
+    result = self._query('SELECT %s FROM Tokens WHERE %s True' % (field, conn))
     if not result['OK']:
       return result
     if len(result['Value']) == 0:
@@ -677,12 +682,17 @@ class OAuthDB(DB):
       result['Value'] = list(result['Value'])
     return result
 
-  def __getListFromWhere(self, fields=[], table='Tokens', conn='', **kwargs):
+  def __getListFromWhere(self, fields=[], conn='', **kwargs):
     """ Get fields from table where some filter
+
+        :param list field: field names
+        :param basestring conn: search filter in records
+        :param basestring `**kwargs`: parameters that need add to search filter
+        :return: S_Ok(dict)/S_ERROR()
     """
     resD = {}
     for i in fields:
-      result = self.__getFromWhere(field=i, table=table, conn=conn, **kwargs)
+      result = self.__getFromWhere(field=i, conn=conn, **kwargs)
       if not result['OK']:
         return result
       if result['Value'] is not None:

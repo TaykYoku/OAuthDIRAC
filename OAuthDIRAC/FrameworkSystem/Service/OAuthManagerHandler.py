@@ -162,7 +162,13 @@ class OAuthManagerHandler(RequestHandler):
         if not Registry.getGroupsForUser(resD['UserName'])['OK']:
           return S_ERROR('Cannot get proxy')
         for DN in result['Value']:
-          if group in Registry.getGroupsFromDNProperties(DN):
+          result = Registry.getDNProperty(DN, 'Groups')
+          if not result['OK']:
+            return S_ERROR('Cannot get proxy, %s' % result['Message'])
+          groupList = result['Value']
+          if not isinstance(groupList, list):
+            groupList = groupList.split()
+          if group in groupList:
             if voms:
               voms = Registry.getVOForGroup(group)
               result = gProxyManager.downloadVOMSProxy(DN, group, requiredVOMSAttribute=voms,

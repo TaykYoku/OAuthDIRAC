@@ -30,11 +30,11 @@ class OAuth2ProxyProvider(ProxyProvider):
                               FullName, UserName, DN, EMail, DiracGroup
         :return: S_OK/S_ERROR, Value is a proxy string
     """
-    if 'ProxyProviderName' not in self.parameters:
+    if not self.name:
       return S_ERROR('No found ProxyProviderName option')
 
     # Create proxy
-    result = OAuthManagerClient().getStringProxy(self.parameters['ProxyProviderName'], userDict)
+    result = OAuthManagerClient().getStringProxy(self.name, userDict)
     if not result['OK']:
       return result
     proxyStr = result['Value']
@@ -64,10 +64,10 @@ class OAuth2ProxyProvider(ProxyProvider):
         :param dict userDict:
         :return: S_OK/S_ERROR, Value is the DN string
     """
-    if 'ProxyProviderName' not in self.parameters:
+    if not self.name:
       return S_ERROR('No found ProxyProviderName option')
 
-    result = OAuthManagerClient().getUserDN(self.parameters['ProxyProviderName'], userDict)
+    result = OAuthManagerClient().getUserDN(self.name, userDict)
     
     if result['OK'] and 'DN' in userDict:
       if userDict['DN'] == result['Value']:
