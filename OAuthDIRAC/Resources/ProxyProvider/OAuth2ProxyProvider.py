@@ -1,12 +1,6 @@
 """ ProxyProvider implementation for the proxy generation using OIDC flow
 """
 
-import os
-import glob
-import shutil
-import tempfile
-import commands
-
 from DIRAC import S_OK, S_ERROR
 from DIRAC.Resources.ProxyProvider.ProxyProvider import ProxyProvider
 from DIRAC.Core.Security.X509Chain import X509Chain

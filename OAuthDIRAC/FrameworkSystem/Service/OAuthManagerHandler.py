@@ -42,6 +42,7 @@ class OAuthManagerHandler(RequestHandler):
     """ Check status of tokens, refresh and back dict.
 
         :param basestring token: access token
+
         :return: S_OK(dict)/S_ERROR()
     """
     gLogger.notice("Check token %s." % token)
@@ -54,6 +55,7 @@ class OAuthManagerHandler(RequestHandler):
         
         :param basestring proxyProvider: proxy provider name
         :param dict userDict: user parameters
+
         :return: S_OK(basestring)/S_ERROR()
     """
     return gOAuthDB.getProxy(proxyProvider, userDict)
@@ -65,6 +67,7 @@ class OAuthManagerHandler(RequestHandler):
         
         :param basestring proxyProvider: proxy provider name
         :param dict userDict: user parameters
+
         :return: S_OK(basestring)/S_ERROR()
     """
     return gOAuthDB.getUserDN(proxyProvider, userDict)
@@ -75,7 +78,8 @@ class OAuthManagerHandler(RequestHandler):
     """ Get username by session number
 
         :param basestring state: session number
-        :result: S_OK(dict)/S_ERROR()
+
+        :return: S_OK(dict)/S_ERROR()
     """
     result = gOAuthDB.getFieldByState(state, ['UserName', 'State'])
     if not result['OK']:
@@ -88,6 +92,7 @@ class OAuthManagerHandler(RequestHandler):
     """ Remove session
     
         :param basestring state: session number
+
         :return: S_OK()/S_ERROR()
     """
     return gOAuthDB.killSession(state)
@@ -98,14 +103,15 @@ class OAuthManagerHandler(RequestHandler):
     """ Get authorization URL by session number
 
         :param basestring state: session number
-        :result: S_OK(basestring)/S_ERROR()
+
+        :return: S_OK(basestring)/S_ERROR()
     """
     return gOAuthDB.getLinkByState(state)
 
   types_waitStateResponse = [basestring]
 
   def export_waitStateResponse(self, state, group=None, needProxy=False,
-                               voms=None, proxyLifeTime=43200, time_out=20, sleeptime=5):
+                               voms=None, proxyLifeTime=43200, timeOut=20, sleeptime=5):
     """ Listen DB to get status of auth and proxy if needed
 
         :param basestring state: session number
@@ -113,17 +119,18 @@ class OAuthManagerHandler(RequestHandler):
         :param basestring group: group name for proxy DIRAC group extentional
         :param basestring voms: voms name
         :param int proxyLifeTime: requested proxy live time
-        :param int time_out: time in a seconds needed to wait result
+        :param int timeOut: time in a seconds needed to wait result
         :param int sleeptime: time needed to wait between requests
+
         :return: S_OK(dict)/S_ERROR
     """
     gLogger.notice("%s session, waiting authorization status" % state)
     start = time.time()
     runtime = 0
-    for _i in range(int(int(time_out) // int(sleeptime))):
+    for _i in range(int(int(timeOut) // int(sleeptime))):
       time.sleep(sleeptime)
       runtime = time.time() - start
-      if runtime > time_out:
+      if runtime > timeOut:
         gOAuthDB.kill_state(state)
         return S_ERROR('Timeout')
       result = gOAuthDB.getFieldByState(state)
@@ -195,6 +202,7 @@ class OAuthManagerHandler(RequestHandler):
     """ Register new session and return dict with authorization url and session number
     
         :param basestring OAuthProvider: provider name
+
         :return: S_OK(dict)/S_ERROR()
     """
     gLogger.notice("Creating authority request URL for '%s' IdP." % idp)
@@ -212,6 +220,7 @@ class OAuthManagerHandler(RequestHandler):
 
         :param basestring code: authorization code
         :param basestring state: session number
+
         :return: S_OK(dict)/S_ERROR
     """
     gLogger.notice('%s session get response with code "%s" to process' % (state, code))

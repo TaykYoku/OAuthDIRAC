@@ -99,7 +99,7 @@ class OAuth2Handler(WebHandler):
       status = 'status' in args and args['status'][0]
       needProxy = 'proxy' in args and args['proxy'][0]
       error = 'error' in args and ', '.join(args['error'])
-      time_out = 'time_out' in args and args['time_out'][0] or None
+      timeOut = 'timeOut' in args and args['timeOut'][0] or None
       proxyLifeTime = 'proxyLifeTime' in args and int(args['proxyLifeTime'][0]) or None
       error_description = 'error_description' in args and ', '.join(args['error_description'])
     
@@ -138,7 +138,7 @@ class OAuth2Handler(WebHandler):
           msg = 'and try to return proxy'
         gLogger.notice('%s session, get status of authorization %s' % (status, msg))
         result = yield self.threadTask(gOAuthCli.waitStateResponse, status, group,
-                                       needProxy, voms, proxyLifeTime, time_out)
+                                       needProxy, voms, proxyLifeTime, timeOut)
         if not result['OK']:
           gLogger.error(result['Message'])
           raise tornado.web.HTTPError(404, result['Message'])

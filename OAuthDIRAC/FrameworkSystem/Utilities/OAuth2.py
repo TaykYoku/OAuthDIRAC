@@ -21,6 +21,7 @@ def getIdPWellKnownDict(oauthProvider=None, issuer=None, wellKnown=None):
       :param basestring oauthProvider: name provider on OAuth2 protocol e.g. CheckIn
       :param basestring issuer: base URL of provider
       :param basestring wellKnown: complete link to provider oidc configuration
+
       :return: S_OK(dict)/S_ERROR()
   """
   url = wellKnown or issuer and '%s/.well-known/openid-configuration' % issuer
@@ -47,6 +48,7 @@ def getIdPSyntax(idp, section):
 
       :param basestring idp: provider name
       :param basestring section: about what need to collect information, e.g. VOMS
+
       :return: S_OK(dict)/S_ERROR
   """
   resDict = {}
@@ -71,20 +73,25 @@ def getIdPSyntax(idp, section):
   return S_OK(resDict)
 
 
-class OIDCClient(requests.Session):
+class OAuth2(requests.Session):
 
-  def __init__(self, idp=None, client_id=None, client_secret=None, redirect_uri=None,
-               scope=[], issuer=None, authorization_endpoint=None, token_endpoint=None,
-               introspection_endpoint=None, proxy_endpoint=None, max_proxylifetime=None,
-               response_types_supported=None, grant_types_supported=None, revocation_endpoint=None,
-               userinfo_endpoint=None, jwks_uri=None, registration_endpoint=None, prompt=None,
-               scopes_supported=None, addDict={}):
+  def __init__(self, idp=None,
+               state=None, scope=[],
+               prompt=None, issuer=None,
+               jwks_uri=None, client_id=None,
+               redirect_uri=None, client_secret=None,
+               proxy_endpoint=None, token_endpoint=None,
+               scopes_supported=None, userinfo_endpoint=None,
+               max_proxylifetime=None, revocation_endpoint=None,
+               registration_endpoint=None, grant_types_supported=None,
+               authorization_endpoint=None, introspection_endpoint=None,
+               response_types_supported=None, moreOptions={}):
     """ OIDCClient constructor
     """
     __optns = {}
 
     # Provider name
-    self.idp = idp or addDict.get('ProxyProviderName')
+    self.idp = idp or moreOptions.get('ProxyProviderName')
     
     # Get information from CS
     result = Resources.getIdPDict(idp)
@@ -93,16 +100,20 @@ class OIDCClient(requests.Session):
     __csDict = result.get('Value') or {}
 
     # Get configuration from providers server
-    self.issuer = issuer or addDict.get('issuer') or __csDict.get('issuer')
+    self.issuer = issuer or moreOptions.get('issuer') or __csDict.get('issuer')
     if self.issuer:
       result = getIdPWellKnownDict(oauthProvider=self.idp, issuer=self.issuer)
       if result['OK']:
         if isinstance(result['Value'], dict):
           __optns = result['Value']
 
-    for d in [__csDict, addDict]:
+    for d in [__csDict, moreOptions]:
       for key, value in d.iteritems():
         __optns[key] = value
+
+    oauthAPI = getOAuthAPI()
+    if oauthAPI:
+      redirect_uri = '%s/redirect' % oauthAPI
 
     self.name = idp
     self.client_id = client_id or __optns.get('client_id')
@@ -112,6 +123,7 @@ class OIDCClient(requests.Session):
     if not isinstance(self.scope,list):
       self.scope = self.scope.split(',')
     self.scope += __optns.get('scopes_supported') or []
+    self.state = state or self.createState()
     self.prompt = prompt or __optns.get('prompt')
     self.redirect_uri = redirect_uri or __optns.get('redirect_uri')
     self.client_secret = client_secret or __optns.get('client_secret')
@@ -125,33 +137,12 @@ class OIDCClient(requests.Session):
     self.authorization_endpoint = authorization_endpoint or __optns.get('authorization_endpoint')
     self.introspection_endpoint = introspection_endpoint or __optns.get('introspection_endpoint')
 
-
-class OAuth2(OIDCClient):
-
-  def __init__(self, idp=None, state=None, client_id=None, client_secret=None, redirect_uri=None,
-               scope=[], issuer=None, authorization_endpoint=None, token_endpoint=None, introspection_endpoint=None,
-               proxy_endpoint=None, max_proxylifetime=None, response_types_supported=None, grant_types_supported=None,
-               revocation_endpoint=None, userinfo_endpoint=None, jwks_uri=None, registration_endpoint=None, prompt=None,
-               scopes_supported=None, addDict={}):
-    """ OAuth2 constructor
-    """
-
-    super(OAuth2, self).__init__(idp, client_id, client_secret, redirect_uri, scope, issuer, proxy_endpoint,
-                                 max_proxylifetime, authorization_endpoint, token_endpoint, introspection_endpoint,
-                                 response_types_supported, grant_types_supported, revocation_endpoint,
-                                 userinfo_endpoint, jwks_uri, registration_endpoint, prompt, scopes_supported,
-                                 addDict={})
-
-    self.state = state or self.createState()
-    oauthAPI = getOAuthAPI()
-    if oauthAPI:
-      self.redirect_uri = '%s/redirect' % oauthAPI
-
   def createAuthRequestURL(self, **kwargs):
     """ Create link for authorization and state of authorization session
 
         :param basestring,list `**kwargs`: OAuth2 parameters that will be added to request url,
-          e.g. **{authorization_endpoint='http://domain.ua/auth', scope=['openid','profile']}
+               e.g. **{authorization_endpoint='http://domain.ua/auth', scope=['openid','profile']}
+
         :return: basestring url, basestring state
     """
     gLogger.info('Create auth URL..')
@@ -172,6 +163,7 @@ class OAuth2(OIDCClient):
     """ Collecting information about user
     
         :param basestring code: authorize code that come with response(authorize code flow)
+
         :result: S_OK(dict)/S_ERROR()
     """
     oaDict = {}
@@ -197,7 +189,8 @@ class OAuth2(OIDCClient):
         :param int proxylifetime: period in second that proxy must to live
         :param basestring voms: VOMS name to get proxy with voms extentions
         :param basestring,list `**kwargs`: OAuth2 parameters that will be added to request url,
-            e.g. **{authorization_endpoint='http://domain.ua/auth', scope=['openid','profile']}
+               e.g. **{authorization_endpoint='http://domain.ua/auth', scope=['openid','profile']}
+
         :return: S_OK(basestring)/S_ERROR()
     """
     # Prepare URL
@@ -246,6 +239,7 @@ class OAuth2(OIDCClient):
     """ Get user profile
     
         :param basestring access_token: access token
+
         :return: S_OK(dict)/S_ERROR()
     """
     headers = {'Authorization': 'Bearer ' + access_token}
@@ -261,6 +255,7 @@ class OAuth2(OIDCClient):
     
         :param basestring access_token: access token
         :param basestring refresh_token: refresh token
+
         :return: S_OK()/S_ERROR()
     """
     if not self.revocation_endpoint:
@@ -276,6 +271,7 @@ class OAuth2(OIDCClient):
     
         :param basestring code: authorize code that come with response(authorize code flow)
         :param basestring refresh_token: refresh token
+
         :return: S_OK(dict)/S_ERROR()
     """
     url = self.token_endpoint
