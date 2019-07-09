@@ -5,10 +5,9 @@
 __RCSID__ = "$Id$"
 
 from DIRAC import gLogger, S_ERROR
-from DIRAC.Core.Base.Client import Client#, createClient
+from DIRAC.Core.Base.Client import Client
 
 
-#@createClient('Framework/OAuthManager')
 class OAuthManagerClient(Client):
 
   def __init__(self, **kwargs):

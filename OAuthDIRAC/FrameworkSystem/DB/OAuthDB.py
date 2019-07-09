@@ -10,7 +10,7 @@ from datetime import datetime
 
 from DIRAC import gConfig, S_OK, S_ERROR
 from DIRAC.Core.Base.DB import DB
-from DIRAC.Core.Security.X509Chain import X509Chain
+from DIRAC.Core.Security.X509Chain import X509Chain  # pylint: disable=import-error
 from DIRAC.ConfigurationSystem.Client.CSAPI import CSAPI
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry, Resources
 from DIRAC.Resources.ProxyProvider.ProxyProviderFactory import ProxyProviderFactory
