@@ -54,15 +54,9 @@ class Params(ProxyGeneration.CLIParams):
     self.uploadProxy = True
     return S_OK()
 
-  def setUploadPilotProxy(self, _arg):
-    self.uploadPilot = True
-    return S_OK()
-
   def registerCLISwitches(self):
     ProxyGeneration.CLIParams.registerCLISwitches(self)
     Script.registerSwitch("U", "upload", "Upload a long lived proxy to the ProxyManager", self.setUploadProxy)
-    Script.registerSwitch("P", "uploadPilot", "Upload a long lived pilot proxy to the ProxyManager",
-                          self.setUploadPilotProxy)
     Script.registerSwitch("e:", "email:", "Send oauth authentification url on email", self.setEmail)
     Script.registerSwitch("O:", "OAuth:", "Set OAuth2 IdP for authentification", self.setOAuth)
     Script.registerSwitch("q", "qrcode", "Print link as QR code", self.setQRcode)
@@ -260,7 +254,7 @@ class ProxyInit(object):
     import itertools
     import threading
     import webbrowser
-    
+
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     def restRequest(url=None, endpoint='', metod='GET', **kwargs):
@@ -276,13 +270,15 @@ class ProxyInit(object):
             __opts += '&%s=%s' % (key, kwargs[key])
       try:
         r = requests.get('%s%s?%s' % (url, endpoint, __opts), verify=False)
-      except Exception as ex:
-        return S_ERROR(ex)
-      if not r.status_code == 200:
-        return S_ERROR('Http request error: %s' % r.status_code)
-      try:
+        r.raise_for_status()
         return S_OK(r.json())
-      except Exception as ex:
+      except requests.exceptions.Timeout:
+        return S_ERROR('Time out')
+      except requests.exceptions.RequestException as ex:
+        return S_ERROR(ex)        
+      except requests.exceptions.HTTPError as ex:
+        return S_ERROR('Failed: %s' % r.text or ex)
+      except BaseException as ex:
         return S_ERROR('Cannot read response: %s' % ex)
 
     timeOut = 300
@@ -316,7 +312,7 @@ class ProxyInit(object):
       try:
         import pyqrcode
       except Exception as ex:
-        pass
+        gLogger.warn('pyqrcode library is not installed.')
       else:
         __qr = '\n'
         qrA = pyqrcode.create(url).code
@@ -353,38 +349,42 @@ class ProxyInit(object):
       gLogger.fatal('Cannot get http url of oauth server:\n %s' % res['Message'])
       sys.exit(1)
     oauthUrl = res['Value']
+    
+    # Submit authorization session
     params = {'IdP': self.__piParams.IdP}
     if self.__piParams.addEmail:
       params['email'] = self.__piParams.Email
     res = restRequest(oauthUrl, '/oauth', **params)
     if not res['OK']:
       gLogger.fatal(res['Message'])
-    result = res['Value']
-    if not result['OK']:
-      # Print link in output if it was not sent by email
-      if not self.__piParams.addEmail:
-        gLogger.fatal(result['Message'])
-        sys.exit(1)
-      gLogger.notice('Cannot not sent link to your email: %s' % result['Message'])
-    elif 'url' not in result['Value'] or 'state' not in result['Value']:
-      gLogger.fatal('Authentification url with state was not genereted by OAuth2service. Sorry sheet happends.')
       sys.exit(1)
-    url = result['Value']['url']
-    state = result['Value']['state']
-    if not url or not state:
+    result = res['Value']
+
+    # Create authorization link
+    state = result['Value'].get('state')
+    if not state:
       gLogger.fatal('Cannot get link for authentication.')
       sys.exit(1)
     url = '%s/oauth?getlink=%s' % (oauthUrl, state)
 
-    gLogger.notice('Use link to authentication..')
-
-    if self.__piParams.addEmail:
-      gLogger.notice('Likn was sent to your email(%s)!' % self.__piParams.Email)
+    # Output authentication link
+    if not webbrowser.open_new_tab(url):
+      if not result['OK']:
+        # Print link in output if it was not sent by email
+        if not self.__piParams.addEmail:
+          gLogger.fatal(result['Message'])
+          sys.exit(1)
+        gLogger.notice('Failed to send mail. URL to continue %s' % url)
+      elif self.__piParams.addEmail:
+        gLogger.notice('Mail was sent.')
+      else:
+        gLogger.notice('URL to continue %s' % url)
     else:
-      if not webbrowser.open_new_tab(url):
-        gLogger.notice('%s\n' % url)
-        if self.__piParams.addQRcode:
-          qrterminal(url)
+      gLogger.notice('Opening %s in browser..' % url)
+    
+    # Show QR code
+    if self.__piParams.addQRcode:
+      qrterminal(url)
 
     # Loop: waiting status of request
     threading.Thread(target=loading).start()

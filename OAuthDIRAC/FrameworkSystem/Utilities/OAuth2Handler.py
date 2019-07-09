@@ -42,7 +42,7 @@ class OAuth2Handler(WebHandler):
 
     if args:
       idp = 'IdP' in args and args['IdP'][0]
-      email = 'email' in args and ['email'][0]
+      email = 'email' in args and args['email'][0]
       getlink = 'getlink' in args and args['getlink'][0]
       
       if getlink:
@@ -62,12 +62,15 @@ class OAuth2Handler(WebHandler):
         result = yield self.threadTask(gOAuthCli.createAuthRequestURL, idp)
         if not result['OK']:
           gLogger.error(result['Message'])
-          raise tornado.web.HTTPError(404, result['Message'])
+          raise tornado.web.HTTPError(500, result['Message'])
         state = result['Value']['state']
-        url = '%s/oauth?getlink=%s' % (getOAuthAPI, state)
+        oauthAPI = getOAuthAPI()
+        if not oauthAPI:
+          raise tornado.web.HTTPError(500, 'Cannot find redirect URL.')
+        url = '%s/oauth?getlink=%s' % (oauthAPI, state)
         if email:
           result = yield self.threadTask(NotificationClient().sendMail, email,
-                                         'Authentication throught %s IdP' % idp,
+                                         'Authentication throught %s' % idp,
                                          'Please, go throught the link %s to authorize.' % url)
           result['Value'] = {'state': state}
         gLogger.notice('%s authorization session "%s" provider was created' % (state, idp))
@@ -108,15 +111,15 @@ class OAuth2Handler(WebHandler):
         if not state:
           self.finish('No state argument found.')
         else:
-          gLogger.notice('%s session, parsing response with authorization code "%s"' % (state,code))
+          gLogger.notice('%s session, parsing response with authorization code "%s"' % (state, code))
           result = yield self.threadTask(gOAuthCli.parseAuthResponse, code, state)
           if not result['OK']:
             gLogger.error(result['Message'])
-            raise tornado.web.HTTPError(404, result['Message'])
+            raise tornado.web.HTTPError(500, result['Message'])
           else:
             oDict = result['Value']
             if oDict['redirect']:
-              gLogger.notice('%s session, redirect to new authorization flow "%s"' % (state,oDict['redirect']))
+              gLogger.notice('%s session, redirect to new authorization flow "%s"' % (state, oDict['redirect']))
               self.redirect(oDict['redirect'])
             else:
               t = Template('''<!DOCTYPE html>
@@ -141,7 +144,7 @@ class OAuth2Handler(WebHandler):
                                        needProxy, voms, proxyLifeTime, timeOut)
         if not result['OK']:
           gLogger.error(result['Message'])
-          raise tornado.web.HTTPError(404, result['Message'])
+          raise tornado.web.HTTPError(500, result['Message'])
         self.finish(json.dumps(result))
 
       # Catch errors

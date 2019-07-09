@@ -7,14 +7,14 @@ import random
 import string
 import requests
 
-from DIRAC import S_OK, S_ERROR, gLogger
+from DIRAC import gLogger, S_OK, S_ERROR
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry, Resources
 from DIRAC.ConfigurationSystem.Client.Utilities import getOAuthAPI
 
 __RCSID__ = "$Id$"
 
 
-def getIdPWellKnownDict(oauthProvider=None, issuer=None, wellKnown=None):
+def getWellKnownDict(oauthProvider=None, issuer=None, wellKnown=None):
   """ Returns OpenID Connect metadata related to the specified authorization server
       of provider, enough one parameter
 
@@ -42,40 +42,40 @@ def getIdPWellKnownDict(oauthProvider=None, issuer=None, wellKnown=None):
   return S_OK(r.json())
 
 
-def getIdPSyntax(idp, section):
+def getParsingSyntax(name, section):
   """ Get claim and regexs from CS to parse response with user information
       to get VO/Role
 
-      :param basestring idp: provider name
+      :param basestring name: provider name
       :param basestring section: about what need to collect information, e.g. VOMS
 
       :return: S_OK(dict)/S_ERROR
   """
   resDict = {}
-  result = Resources.getIdPSections(idp)
+  result = Resources.getIdPSections(name)
   if not result['OK']:
     return result
-  result = Resources.getIdPSections(idp, '/Syntax')
+  result = Resources.getIdPSections(name, '/Syntax')
   if not result['OK']:
     return result
   opts = result['Value']
   if section not in opts:
-    return S_ERROR('In /Resources/%s/Syntax/ not found %s section' % (idp,section))
-  result = Resources.getIdPOptions(idp, '/Syntax/%s' % section)
+    return S_ERROR('In /Resources/%s/Syntax/ not found %s section' % (name,section))
+  result = Resources.getIdPOptions(name, '/Syntax/%s' % section)
   if not result['OK']:
     return result
   keys = result['Value']
   if 'claim' not in keys:
     return S_ERROR('No claim found for %s in CFG.' % section)
-  resDict['claim'] = Resources.getIdPOption(idp, '/Syntax/%s/claim' % section)
+  resDict['claim'] = Resources.getIdPOption(name, '/Syntax/%s/claim' % section)
   for key in keys:
-    resDict[key] = Resources.getIdPOption(idp, '/Syntax/%s/%s' % (section, key))
+    resDict[key] = Resources.getIdPOption(name, '/Syntax/%s/%s' % (section, key))
   return S_OK(resDict)
 
 
 class OAuth2(requests.Session):
 
-  def __init__(self, idp=None,
+  def __init__(self, name=None,
                state=None, scope=[],
                prompt=None, issuer=None,
                jwks_uri=None, client_id=None,
@@ -89,20 +89,22 @@ class OAuth2(requests.Session):
     """ OIDCClient constructor
     """
     __optns = {}
+    self.log = gLogger.getSubLogger('OAuth2')
 
     # Provider name
-    self.idp = idp or moreOptions.get('ProxyProviderName')
+    # FIXME: ProxyProviderName --> providerName (it depends from proxyprovider class)
+    self.name = name or moreOptions.get('ProxyProviderName')
     
     # Get information from CS
-    result = Resources.getIdPDict(idp)
+    result = Resources.getIdPDict(self.name)
     if not result['OK']:
-      result = Resources.getProxyProviderDict(idp)
+      result = Resources.getProxyProviderDict(self.name)
     __csDict = result.get('Value') or {}
 
     # Get configuration from providers server
     self.issuer = issuer or moreOptions.get('issuer') or __csDict.get('issuer')
     if self.issuer:
-      result = getIdPWellKnownDict(oauthProvider=self.idp, issuer=self.issuer)
+      result = getWellKnownDict(oauthProvider=self.name, issuer=self.issuer)
       if result['OK']:
         if isinstance(result['Value'], dict):
           __optns = result['Value']
@@ -111,18 +113,23 @@ class OAuth2(requests.Session):
       for key, value in d.iteritems():
         __optns[key] = value
 
+    # Get redirect URL from CS
     oauthAPI = getOAuthAPI()
     if oauthAPI:
       redirect_uri = '%s/redirect' % oauthAPI
 
-    self.name = idp
+    # Check client Id
     self.client_id = client_id or __optns.get('client_id')
     if not self.client_id:
       raise Exception('client_id parameter is absent.')
+    
+    # Create list of all possible scopes
     self.scope = scope or __optns.get('scope') or []
-    if not isinstance(self.scope,list):
+    if not isinstance(self.scope, list):
       self.scope = self.scope.split(',')
     self.scope += __optns.get('scopes_supported') or []
+
+    # Init main OAuth2 options
     self.state = state or self.createState()
     self.prompt = prompt or __optns.get('prompt')
     self.redirect_uri = redirect_uri or __optns.get('redirect_uri')
@@ -145,7 +152,7 @@ class OAuth2(requests.Session):
 
         :return: basestring url, basestring state
     """
-    gLogger.info('Create auth URL..')
+    self.log.debug('%s session' % self.state, 'Generate URL for authetication.')
     authURL = kwargs.get('authorization_endpoint') or self.authorization_endpoint
     url = '%s?state=%s&response_type=code&client_id=%s&access_type=offline' % \
         (authURL, self.state, self.client_id)
@@ -179,7 +186,6 @@ class OAuth2(requests.Session):
     if not result['OK']:
       return result
     oaDict['UserProfile'] = result['Value']
-    oaDict['idp'] = self.idp
     return S_OK(oaDict)
 
   def getProxy(self, access_token, proxylifetime=None, voms=None, **kwargs):
@@ -193,11 +199,12 @@ class OAuth2(requests.Session):
 
         :return: S_OK(basestring)/S_ERROR()
     """
+    # FIXME: make this method unify for work with diff ProxyManegers
     # Prepare URL
     proxylifetime = proxylifetime or self.max_proxylifetime
     url = self.proxy_endpoint or kwargs.get('proxy_endpoint')
     if not url:
-      return S_ERROR('No get proxy endpoind found for %s IdP.' % self.idp)
+      return S_ERROR('No get proxy endpoind found for %s.' % self.name)
     client_id = self.client_id
     client_secret = self.client_secret
     url += '?client_id=%s&client_secret=%s' % (client_id, client_secret)
@@ -214,7 +221,7 @@ class OAuth2(requests.Session):
       result = Registry.getVOMSServerInfo(voms)
       if not result['OK']:
         return result
-      gLogger.info('"%s" VOMS found' % voms)
+      self.log.info('"%s" VOMS found' % voms)
       vomsname = result['Value'][voms]['VOMSName']
       hostname = result['Value'][voms]['Servers'][0]
       hostDN = result['Value'][voms]['Servers'][hostname]['DN']
@@ -227,12 +234,12 @@ class OAuth2(requests.Session):
       url += '&%s=%s' % (key, kwargs[key])
     
     # Get proxy request
-    gLogger.notice('Get proxy request: %s' % url)
+    self.log.notice('Get proxy request: %s' % url)
     r = requests.get(url, verify=False)
     if not r.status_code == 200:
-      gLogger.error('HTTP error %s' % r.status_code)
+      self.log.error('HTTP error %s' % r.status_code)
       return S_ERROR(r.status_code)
-    gLogger.notice('Success')
+    self.log.notice('Success')
     return S_OK(r.text)
 
   def getUserProfile(self, access_token):

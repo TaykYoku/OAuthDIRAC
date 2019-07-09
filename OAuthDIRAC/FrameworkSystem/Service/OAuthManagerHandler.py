@@ -131,7 +131,7 @@ class OAuthManagerHandler(RequestHandler):
       time.sleep(sleeptime)
       runtime = time.time() - start
       if runtime > timeOut:
-        gOAuthDB.kill_state(state)
+        gOAuthDB.killSession(state)
         return S_ERROR('Timeout')
       result = gOAuthDB.getFieldByState(state)
       if not result['OK']:
@@ -140,7 +140,7 @@ class OAuthManagerHandler(RequestHandler):
       # Looking status of OIDC authorization session
       status = result['Value']['Status']
       comment = result['Value']['Comment']
-      gLogger.notice("%s session %s" % (state, status))
+      gLogger.notice('%s session' % state, status)
       if status == 'prepared':
         continue
       elif status == 'visitor':
@@ -205,7 +205,7 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    gLogger.notice("Creating authority request URL for '%s' IdP." % idp)
+    gLogger.notice("Request to create authority URL for '%s' IdP." % idp)
     result = gOAuthDB.getAuthorizationURL(idp)
     if not result['OK']:
       return S_ERROR('Cannot create authority request URL.')
