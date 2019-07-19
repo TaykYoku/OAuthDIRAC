@@ -8,7 +8,8 @@ import string
 import requests
 
 from DIRAC import gLogger, S_OK, S_ERROR
-from DIRAC.ConfigurationSystem.Client.Helpers import Registry, Resources
+from DIRAC.ConfigurationSystem.Client.Helpers import Registry
+from DIRAC.ConfigurationSystem.Client.Helpers.Resources import getInfoAboutProviders
 from DIRAC.ConfigurationSystem.Client.Utilities import getOAuthAPI
 
 __RCSID__ = "$Id$"
@@ -28,8 +29,8 @@ def getWellKnownDict(oauthProvider=None, issuer=None, wellKnown=None):
   if not url:
     if not oauthProvider:
       return S_ERROR('Need at least one parametr')
-    issuer = Resources.getIdPOption(oauthProvider, 'issuer')
-    url = Resources.getIdPOption(oauthProvider, 'well_known') or \
+    issuer = getInfoAboutProviders(ofWhat='Id', providerName=oauthProvider, option='issuer')['Value']
+    url = getInfoAboutProviders(ofWhat='Id', providerName=oauthProvider, option='well_known')['Value'] or \
         issuer and '%s/.well-known/openid-configuration' % issuer
     if not url:
       return S_ERROR('Cannot get %s provider issuer/wellKnow url' % oauthProvider)
@@ -52,24 +53,26 @@ def getParsingSyntax(name, section):
       :return: S_OK(dict)/S_ERROR
   """
   resDict = {}
-  result = Resources.getIdPSections(name)
+  result = getInfoAboutProviders(ofWhat='Id', providerName=name, section='/')
   if not result['OK']:
     return result
-  result = Resources.getIdPSections(name, '/Syntax')
+  result = getInfoAboutProviders(ofWhat='Id', providerName=name, section='/Syntax')
   if not result['OK']:
     return result
   opts = result['Value']
   if section not in opts:
     return S_ERROR('In /Resources/%s/Syntax/ not found %s section' % (name,section))
-  result = Resources.getIdPOptions(name, '/Syntax/%s' % section)
+  result = getInfoAboutProviders(ofWhat='Id', providerName=name, option='all', section='/Syntax/%s' % section)
   if not result['OK']:
     return result
   keys = result['Value']
   if 'claim' not in keys:
     return S_ERROR('No claim found for %s in CFG.' % section)
-  resDict['claim'] = Resources.getIdPOption(name, '/Syntax/%s/claim' % section)
+  resDict['claim'] = getInfoAboutProviders(ofWhat='Id', providerName=name, option='claim',
+                                  section='/Syntax/%s' % section)['Value']
   for key in keys:
-    resDict[key] = Resources.getIdPOption(name, '/Syntax/%s/%s' % (section, key))
+    resDict[key] = getInfoAboutProviders(ofWhat='Id', providerName=name, option=key,
+                                section='/Syntax/%s' % section)['Value']
   return S_OK(resDict)
 
 
@@ -85,7 +88,7 @@ class OAuth2(requests.Session):
                max_proxylifetime=None, revocation_endpoint=None,
                registration_endpoint=None, grant_types_supported=None,
                authorization_endpoint=None, introspection_endpoint=None,
-               response_types_supported=None, moreOptions={}):
+               response_types_supported=None, providerOfWhat=None, moreOptions={}):
     """ OIDCClient constructor
     """
     __optns = {}
@@ -94,11 +97,18 @@ class OAuth2(requests.Session):
     # Provider name
     # FIXME: ProxyProviderName --> providerName (it depends from proxyprovider class)
     self.name = name or moreOptions.get('ProxyProviderName')
-    
+
     # Get information from CS
-    result = Resources.getIdPDict(self.name)
+    # FIXME: need to add to this class ofWhat instance attribute
+    if not self.providerOfWhat:
+      for instance in (getInfoAboutProviders().get('Value') or []):
+        result = getInfoAboutProviders(ofWhat=instance, providerName=self.name)
+        if result['OK']:
+          break
+    else:
+      result = getInfoAboutProviders(ofWhat=self.providerOfWhat, providerName=self.name)
     if not result['OK']:
-      result = Resources.getProxyProviderDict(self.name)
+      return result
     __csDict = result.get('Value') or {}
 
     # Get configuration from providers server
@@ -114,7 +124,7 @@ class OAuth2(requests.Session):
         __optns[key] = value
 
     # Get redirect URL from CS
-    oauthAPI = getOAuthAPI()
+    oauthAPI = getOAuthAPI('Production')
     if oauthAPI:
       redirect_uri = '%s/redirect' % oauthAPI
 

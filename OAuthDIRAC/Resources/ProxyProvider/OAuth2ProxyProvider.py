@@ -2,9 +2,9 @@
 """
 
 from DIRAC import S_OK, S_ERROR
-from DIRAC.Resources.ProxyProvider.ProxyProvider import ProxyProvider
 from DIRAC.Core.Security.X509Chain import X509Chain  # pylint: disable=import-error
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry
+from DIRAC.Resources.ProxyProvider.ProxyProvider import ProxyProvider
 
 from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import OAuthManagerClient
 

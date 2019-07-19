@@ -64,7 +64,7 @@ class OAuth2Handler(WebHandler):
           gLogger.error(result['Message'])
           raise tornado.web.HTTPError(500, result['Message'])
         state = result['Value']['state']
-        oauthAPI = getOAuthAPI()
+        oauthAPI = getOAuthAPI('Production')
         if not oauthAPI:
           raise tornado.web.HTTPError(500, 'Cannot find redirect URL.')
         url = '%s/oauth?getlink=%s' % (oauthAPI, state)
@@ -178,7 +178,7 @@ class OAuth2Handler(WebHandler):
             </script>
           </body>
         </html>''')
-      self.finish(t.generate(redirect_uri=getOAuthAPI() + '/redirect'))
+      self.finish(t.generate(redirect_uri=getOAuthAPI('Production') + '/redirect'))
 
   @asyncGen
   def post(self):

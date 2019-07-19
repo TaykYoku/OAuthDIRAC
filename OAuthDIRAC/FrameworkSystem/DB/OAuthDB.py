@@ -12,7 +12,8 @@ from DIRAC import gConfig, S_OK, S_ERROR
 from DIRAC.Core.Base.DB import DB
 from DIRAC.Core.Security.X509Chain import X509Chain  # pylint: disable=import-error
 from DIRAC.ConfigurationSystem.Client.CSAPI import CSAPI
-from DIRAC.ConfigurationSystem.Client.Helpers import Registry, Resources
+from DIRAC.ConfigurationSystem.Client.Helpers import Registry
+from DIRAC.ConfigurationSystem.Client.Helpers.Resources import getInfoAboutProviders
 from DIRAC.Resources.ProxyProvider.ProxyProviderFactory import ProxyProviderFactory
 
 from OAuthDIRAC.FrameworkSystem.Utilities.OAuth2 import OAuth2, getParsingSyntax
@@ -101,6 +102,7 @@ class OAuthDB(DB):
     
         :param basestring OAuthProvider: provider name
         :param basestring state: here is able to set session number(optional)
+
         :return: S_OK(dict)/S_ERROR()
     """
     url, state = OAuth2(OAuthProvider, state=state).createAuthRequestURL()
@@ -116,6 +118,7 @@ class OAuthDB(DB):
     """ Return authorization URL from session
 
         :param basestring state: session number
+
         :return: S_OK(basestring)/S_ERROR()
     """
     __conn='Status = "prepared" and TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) < 300'
@@ -131,13 +134,14 @@ class OAuthDB(DB):
 
         :param basestring proxyProvider: proxy provider name
         :param dict userDict: user parameters
+
         :return: S_OK(basestring)/S_ERROR
     """
     __conn = ''
     __params = {'OAuthProvider': proxyProvider}
     
     # Check provider
-    result = Resources.getProxyProviders()
+    result = getInfoAboutProviders(ofWhat='Proxy')
     if not result['OK']:
       return result
     if proxyProvider not in result['Value']:
@@ -210,6 +214,7 @@ class OAuthDB(DB):
         
         :param basestring proxyProvider: proxy provider name
         :param dict userDict: user parameters
+
         :return: S_OK(basestring)/S_ERROR()
     """
     self.log.info('Getting proxy from %s provider' % proxyProvider)
@@ -224,6 +229,7 @@ class OAuthDB(DB):
         
         :param basestring proxyProvider: proxy provider name
         :param dict userDict: user parameters
+
         :return: S_OK(basestring)/S_ERROR()
     """
     self.log.info('Getting proxy from %s provider' % proxyProvider)
@@ -289,7 +295,7 @@ class OAuthDB(DB):
       __statusComment('No refresh token')
       return S_ERROR('No refresh token')
 
-    if OAuthProvider in Resources.getProxyProviders()['Value']:
+    if OAuthProvider in getInfoAboutProviders(ofWhat='Proxy')['Value']:
       # For proxy provider
       self.log.info('%s session of "%s" proxy provider' % (state, OAuthProvider))
       result = self.__getFromWhere('Comment', State=state.replace('_proxy', ''))
@@ -334,7 +340,7 @@ class OAuthDB(DB):
       csModDict['UsrOptns']['DNProperties/%s/Groups' % secDN] = ','.join(csModDict['UsrOptns']['Groups'])
       csModDict['UsrOptns']['DNProperties/%s/ProxyProviders' % secDN] = OAuthProvider
 
-    elif OAuthProvider in Resources.getIdPs()['Value']:
+    elif OAuthProvider in getInfoAboutProviders(ofWhat='Id')['Value']:
       # For identity provider
       self.log.info('%s session of "%s" identity provider' % (state, OAuthProvider))
       result = self.prepareUserParameters(OAuthProvider, **oauthDict['UserProfile'])
@@ -349,9 +355,18 @@ class OAuthDB(DB):
         __statusComment(comment, status='visitor')
         return S_OK({'redirect': '', 'Messages': comment})
       else:
-        proxyProvider = Resources.getIdPOption(OAuthProvider, 'proxy_provider')
+        result = getInfoAboutProviders(ofWhat='Id', providerName=OAuthProvider, option='proxy_provider')
+        if not result['OK']:
+          return result
+        proxyProvider = result['Value']
         
         if proxyProvider:
+          # Get provider type
+          result = getInfoAboutProviders(ofWhat='Proxy', providerName=proxyProvider, option='ProxyProviderType')
+          if not result['OK']:
+            return result
+          proxyProviderType = result['Value']
+
           # Looking DN in user configuration
           self.log.info('%s session' % state, 'try to get user DN from configuration')
           result = Registry.getDNFromProxyProviderForUserID(proxyProvider, oauthDict['UserProfile']['sub'])
@@ -395,7 +410,7 @@ class OAuthDB(DB):
               __statusComment(result['Message'])
               return result
           
-          elif Resources.getProxyProviderOption(proxyProvider, 'ProxyProviderType') == 'OAuth2':
+          elif proxyProviderType == 'OAuth2':
             # If cannot get DN and proxy provider with OIDC authorization flow
             #   need to initialize new OIDC authorization flow
             self.log.info('%s session, initialize "%s" authorization flow to get user DN' % (state, OAuthProvider))
@@ -454,6 +469,7 @@ class OAuthDB(DB):
 
         :param basestring state: session number
         :param basestring,list value: fields that need to return from session record
+
         :result: S_OK(dict)/S_ERROR()
     """
     result = self.updateFields('Tokens', ['LastAccess'], ['UTC_TIMESTAMP()'], {'State': state})
@@ -468,6 +484,7 @@ class OAuthDB(DB):
     
         :param basestring state: session number
         :param basestring accessToken: access token as a filter for searching
+
         :return: S_OK()/S_ERROR()
     """
     conDict = {}
@@ -492,6 +509,7 @@ class OAuthDB(DB):
 
         :param basestring token: access token
         :param basestring state: session number where are store tokens
+
         :return: S_OK(dict)/S_ERROR()
     """
     params = {'Status': 'authed'}
@@ -552,6 +570,7 @@ class OAuthDB(DB):
         
         :param basestring provider: provider name
         :param basestring,list `**kwargs`: user parameters that will be added to CS
+
         :return: S_OK(dict)/S_ERROR()
     """
     prepDict = {'UsrOptns': {}, 'Groups': []}
@@ -605,7 +624,10 @@ class OAuthDB(DB):
       prepDict['UsrOptns']['DN'].append(kwargs['DN'])
     
     # Add default group(s) for proxy provider
-    defGroup = Resources.getIdPOption(provider, 'dirac_groups')
+    result = getInfoAboutProviders(ofWhat='Id', providerName=provider, option='dirac_groups')
+    if not result['OK']:
+      return result
+    defGroup = result['Value']
     if defGroup:
       if not isinstance(defGroup,list):
         defGroup = defGroup.replace(' ','').split(',')
@@ -669,6 +691,7 @@ class OAuthDB(DB):
         :param basestring field: field name
         :param basestring conn: search filter in records
         :param basestring `**kwargs`: parameters that need add to search filter
+
         :return: S_Ok()/S_ERROR()
     """
     if conn:
@@ -689,6 +712,7 @@ class OAuthDB(DB):
 
         :param list field: field names
         :param basestring `**kwargs`: parameters that need add to search filter
+
         :return: S_Ok(dict)/S_ERROR()
     """
     resD = {}
@@ -706,6 +730,7 @@ class OAuthDB(DB):
     """ Add seconds to time in parameter
 
         :param int seconds: seconds that need to add
+
         :return S_OK(datetime)/S_ERROR()
     """
     result = self._query('SELECT ADDDATE(UTC_TIMESTAMP(), INTERVAL %s SECOND)' % seconds)
@@ -719,6 +744,7 @@ class OAuthDB(DB):
     """ Return difference in a seconds of time in parameter and current time
 
         :param datetime date: time that need to check with current
+
         :return S_OK(int)/S_ERROR()
     """
     result = self._query('SELECT TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),"%s");' % date)
