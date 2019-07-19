@@ -1,8 +1,6 @@
 """ HTTP API of the DIRAC configuration data
 """
 
-__RCSID__ = "$Id$"
-
 import json
 import time
 import tornado
@@ -11,41 +9,49 @@ from tornado import web, gen
 from tornado.template import Template
 
 from DIRAC import S_OK, S_ERROR, gConfig, gLogger
-from DIRAC.Core.HTTP.Lib.WebHandler import WebHandler, asyncGen
+
+from WebAppDIRAC.Lib.WebHandler import WebHandler, asyncGen
+
+__RCSID__ = "$Id$"
 
 
 class ConfigurationHandler(WebHandler):
   OFF = False
   AUTH_PROPS = "all"
-  LOCATION = "/configuration"
+  LOCATION = "configuration"
 
   @asyncGen
   def web_get(self):
-    """ Method to getting some configuration information
-    :return: requested data
+    """ Authentication endpoint, used to:
+          get configuration information, with arguments:
+           option - path to opinion with opinion name, e.g /DIRAC/Extensions
+           options - section path where need to get list of opinions
+           section - section path to get dict of all opinions, values there
+           sections - section path where need to get list of sections
+        
+        :return: json with requested data
     """
-    gLogger.debug('Get CS request:\n %s' % self.request)
     args = self.request.arguments
-    if args.get('option'):
-      path = args['option'][0]
+    key = args.keys()[0]
+    path = args.values()[0][0]
+    gLogger.notice('Request configuration information')
+
+    if key == 'option':
       result = yield self.threadTask(gConfig.getOption, path)
       if not result['OK']:
         raise tornado.web.HTTPError(404, result['Message'])
       self.finish(json.dumps(result['Value']))
-    elif args.get('section'):
-      path = args['section'][0]
+    elif key == 'section':
       result = yield self.threadTask(gConfig.getOptionsDict, path)
       if not result['OK']:
         raise tornado.web.HTTPError(404, result['Message'])
       self.finish(json.dumps(result['Value']))
-    elif args.get('options'):
-      path = args['options'][0]
+    elif key == 'options':
       result = yield self.threadTask(gConfig.getOptions, path)
       if not result['OK']:
         raise tornado.web.HTTPError(404, result['Message'])
       self.finish(json.dumps(result['Value']))
-    elif args.get('sections'):
-      path = args['sections'][0]
+    elif key == 'sections':
       result = yield self.threadTask(gConfig.getSections, path)
       if not result['OK']:
         raise tornado.web.HTTPError(404, result['Message'])
@@ -55,5 +61,6 @@ class ConfigurationHandler(WebHandler):
 
   @asyncGen
   def post(self):
-    """ Post method """
+    """ Post method
+    """
     pass

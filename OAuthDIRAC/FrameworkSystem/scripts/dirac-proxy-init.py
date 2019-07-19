@@ -14,7 +14,7 @@ import datetime
 import DIRAC
 from DIRAC import gConfig, gLogger, S_OK, S_ERROR
 from DIRAC.Core.Base import Script
-from DIRAC.Core.Security import X509Chain, ProxyInfo, Properties, VOMS
+from DIRAC.Core.Security import X509Chain, ProxyInfo, Properties, VOMS  # pylint: disable=import-error
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry
 from DIRAC.FrameworkSystem.Client import ProxyGeneration, ProxyUpload
 from DIRAC.FrameworkSystem.Client.BundleDeliveryClient import BundleDeliveryClient
@@ -25,25 +25,12 @@ __RCSID__ = "$Id$"
 class Params(ProxyGeneration.CLIParams):
 
   IdP = ''
-  IdPproxy = True
   addEmail = False
   addOAuth = False
   addQRcode = False
   addVOMSExt = False
   uploadProxy = False
   uploadPilot = False
-
-  def setUploadProxy(self, _arg):
-    self.uploadProxy = True
-    return S_OK()
-
-  def setUploadPilotProxy(self, _arg):
-    self.uploadPilot = True
-    return S_OK()
-
-  def setVOMSExt(self, _arg):
-    self.addVOMSExt = True
-    return S_OK()
 
   def setOAuth(self, arg):
     self.IdP = arg
@@ -59,20 +46,22 @@ class Params(ProxyGeneration.CLIParams):
     self.addQRcode = True
     return S_OK()
 
-  def setOAuthProxy(self, _arg):
-    self.IdPproxy = 'proxy_from_oauth_endpoint'
+  def setVOMSExt(self, _arg):
+    self.addVOMSExt = True
+    return S_OK()
+
+  def setUploadProxy(self, _arg):
+    self.uploadProxy = True
     return S_OK()
 
   def registerCLISwitches(self):
     ProxyGeneration.CLIParams.registerCLISwitches(self)
     Script.registerSwitch("U", "upload", "Upload a long lived proxy to the ProxyManager", self.setUploadProxy)
-    Script.registerSwitch("P", "uploadPilot", "Upload a long lived pilot proxy to the ProxyManager",
-                          self.setUploadPilotProxy)
-    Script.registerSwitch("M", "VOMS", "Add voms extension", self.setVOMSExt)
-    Script.registerSwitch("O:", "OAuth:", "Set OAuth2 IdP for authentification", self.setOAuth)
     Script.registerSwitch("e:", "email:", "Send oauth authentification url on email", self.setEmail)
-    Script.registerSwitch("G", "get_oauth_proxy", "Get proxy throught OAuth2", self.setOAuthProxy)
+    Script.registerSwitch("O:", "OAuth:", "Set OAuth2 IdP for authentification", self.setOAuth)
     Script.registerSwitch("q", "qrcode", "Print link as QR code", self.setQRcode)
+    Script.registerSwitch("M", "VOMS", "Add voms extension", self.setVOMSExt)
+    
 
 class ProxyInit(object):
 
@@ -109,36 +98,7 @@ class ProxyInit(object):
       daysLeft = int(lifeLeft / 86400)
       msg = "Your certificate will expire in less than %d days. Please renew it!" % daysLeft
       sep = "=" * (len(msg) + 4)
-      msg = "%s\n  %s  \n%s" % (sep, msg, sep)
-      gLogger.notice(msg)
-
-  def getGroupsToUpload(self):
-    uploadGroups = []
-
-    if self.__piParams.uploadProxy or Registry.getGroupOption(self.__piParams.diracGroup, "AutoUploadProxy", False):
-      uploadGroups.append(self.__piParams.diracGroup)
-
-    if not self.__piParams.uploadPilot:
-      if not Registry.getGroupOption(self.__piParams.diracGroup, "AutoUploadPilotProxy", False):
-        return uploadGroups
-
-    issuerCert = self.getIssuerCert()
-    resultUserDN = issuerCert.getSubjectDN()  # pylint: disable=no-member
-    if not resultUserDN['OK']:
-      return resultUserDN
-    userDN = resultUserDN['Value']
-
-    resultGroups = Registry.getGroupsForDN(userDN)
-    if not resultGroups['OK']:
-      gLogger.error("No groups defined for DN %s" % userDN)
-      return []
-    availableGroups = resultGroups['Value']
-
-    for group in availableGroups:
-      groupProps = Registry.getPropertiesForGroup(group)
-      if Properties.PILOT in groupProps or Properties.GENERIC_PILOT in groupProps:
-        uploadGroups.append(group)
-    return uploadGroups
+      gLogger.notice("%s\n  %s  \n%s" % (sep, msg, sep))
 
   def addVOMSExtIfNeeded(self):
     addVOMS = self.__piParams.addVOMSExt or Registry.getGroupOption(self.__piParams.diracGroup, "AutoAddVOMS", False)
@@ -147,16 +107,14 @@ class ProxyInit(object):
 
     vomsAttr = Registry.getVOMSAttributeForGroup(self.__piParams.diracGroup)
     if not vomsAttr:
-      return S_ERROR(
-          "Requested adding a VOMS extension but no VOMS attribute defined for group %s" %
-          self.__piParams.diracGroup)
+      return S_ERROR("Requested adding a VOMS extension but no VOMS attribute defined for group %s" %
+                     self.__piParams.diracGroup)
 
     resultVomsAttributes = VOMS.VOMS().setVOMSAttributes(self.__proxyGenerated, attribute=vomsAttr,
                                                          vo=Registry.getVOMSVOForGroup(self.__piParams.diracGroup))
     if not resultVomsAttributes['OK']:
-      return S_ERROR(
-          "Could not add VOMS extensions to the proxy\nFailed adding VOMS attribute: %s" %
-          resultVomsAttributes['Message'])
+      return S_ERROR("Could not add VOMS extensions to the proxy\nFailed adding VOMS attribute: %s" %
+                     resultVomsAttributes['Message'])
 
     gLogger.notice("Added VOMS attribute %s" % vomsAttr)
     chain = resultVomsAttributes['Value']
@@ -176,7 +134,7 @@ class ProxyInit(object):
     self.__proxyGenerated = resultProxyGenerated['Value']
     return resultProxyGenerated
 
-  def uploadProxy(self, userGroup=False):
+  def uploadProxy(self):
     """ Upload the proxy to the proxyManager service
     """
     issuerCert = self.getIssuerCert()
@@ -184,21 +142,19 @@ class ProxyInit(object):
     if not resultUserDN['OK']:
       return resultUserDN
     userDN = resultUserDN['Value']
-    if not userGroup:
-      userGroup = self.__piParams.diracGroup
-    gLogger.notice("Uploading proxy for %s..." % userGroup)
+
+    gLogger.notice("Uploading proxy..")
     if userDN in self.__uploadedInfo:
-      expiry = self.__uploadedInfo[userDN].get(userGroup)
+      expiry = self.__uploadedInfo[userDN].get('')
       if expiry:
         if issuerCert.getNotAfterDate()['Value'] - datetime.timedelta(minutes=10) < expiry:  # pylint: disable=no-member
-          gLogger.info("SKipping upload for group %s. Already uploaded" % userGroup)
+          gLogger.info('Proxy with DN "%s" already uploaded' % userDN)
           return S_OK()
-    gLogger.info("Uploading %s proxy to ProxyManager..." % self.__piParams.diracGroup)
+    gLogger.info("Uploading %s proxy to ProxyManager..." % userDN)
     upParams = ProxyUpload.CLIParams()
     upParams.onTheFly = True
     upParams.proxyLifeTime = issuerCert.getRemainingSecs()['Value'] - 300  # pylint: disable=no-member
     upParams.rfcIfPossible = self.__piParams.rfc
-    upParams.diracGroup = userGroup
     for k in ('certLoc', 'keyLoc', 'userPasswd'):
       setattr(upParams, k, getattr(self.__piParams, k))
     resultProxyUpload = ProxyUpload.uploadProxy(upParams)
@@ -247,7 +203,7 @@ class ProxyInit(object):
     newestFPath = max(crlList, key=os.path.getmtime)
     newestFTime = os.path.getmtime(newestFPath)
     if newestFTime > (time.time() - (2 * 24 * 3600)):
-      # At least one of the files has been updated in the last 28 days
+      # At least one of the files has been updated in the last 2 days
       return S_OK()
     if not os.access(caDir, os.W_OK):
       gLogger.error("Your CRLs appear to be outdated, but you have no access to update them.")
@@ -284,8 +240,8 @@ class ProxyInit(object):
       if self.__piParams.strict:
         return resultProxyWithVOMS
 
-    for pilotGroup in pI.getGroupsToUpload():
-      resultProxyUpload = pI.uploadProxy(userGroup=pilotGroup)
+    if self.__piParams.uploadProxy:
+      resultProxyUpload = pI.uploadProxy()
       if not resultProxyUpload['OK']:
         if self.__piParams.strict:
           return resultProxyUpload
@@ -298,8 +254,11 @@ class ProxyInit(object):
     import itertools
     import threading
     import webbrowser
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    from halo import Halo
+
+    @Halo(spinner='dots')
     def restRequest(url=None, endpoint='', metod='GET', **kwargs):
       """ Method to do http requests """
       if not url or not kwargs:
@@ -311,18 +270,21 @@ class ProxyInit(object):
             __opts = '%s=%s' % (key, kwargs[key])
           else:
             __opts += '&%s=%s' % (key, kwargs[key])
+      self.spinner.fail()
       try:
         r = requests.get('%s%s?%s' % (url, endpoint, __opts), verify=False)
-      except Exception as ex:
-        return S_ERROR(ex)
-      if not r.status_code == 200:
-        return S_ERROR('Http request error: %s' % r.status_code)
-      try:
+        r.raise_for_status()
         return S_OK(r.json())
-      except Exception as ex:
+      except requests.exceptions.Timeout:
+        return S_ERROR('Time out')
+      except requests.exceptions.RequestException as ex:
+        return S_ERROR(ex)        
+      except requests.exceptions.HTTPError as ex:
+        return S_ERROR('Failed: %s' % r.text or ex)
+      except BaseException as ex:
         return S_ERROR('Cannot read response: %s' % ex)
 
-    time_out = 300
+    timeOut = 300
     done = False
 
     def loading():
@@ -340,10 +302,10 @@ class ProxyInit(object):
                                 '   *..         ', '  *..          ', ' *..           ',
                                 '*..            ']):
           __runtime = time.time() - __start
-          if done or __runtime > time_out:
+          if done or __runtime > timeOut:
             sys.stdout.write('\r                                                                   \n')
             break
-          lefttime = (time_out - __runtime) // 60
+          lefttime = (timeOut - __runtime) // 60
           sys.stdout.write('\r Waiting %s minutes when you authenticated..' % lefttime + c)
           sys.stdout.flush()
           time.sleep(0.1)
@@ -353,7 +315,7 @@ class ProxyInit(object):
       try:
         import pyqrcode
       except Exception as ex:
-        pass
+        gLogger.warn('pyqrcode library is not installed.')
       else:
         __qr = '\n'
         qrA = pyqrcode.create(url).code
@@ -390,57 +352,64 @@ class ProxyInit(object):
       gLogger.fatal('Cannot get http url of oauth server:\n %s' % res['Message'])
       sys.exit(1)
     oauthUrl = res['Value']
+    
+    # Submit authorization session
     params = {'IdP': self.__piParams.IdP}
     if self.__piParams.addEmail:
       params['email'] = self.__piParams.Email
     res = restRequest(oauthUrl, '/oauth', **params)
     if not res['OK']:
       gLogger.fatal(res['Message'])
-    result = res['Value']
-    if not result['OK']:
-      # Print link in output if it was not sent by email
-      if not self.__piParams.addEmail:
-        gLogger.fatal(result['Message'])
-        sys.exit(1)
-      gLogger.notice('Cannot not sent link to your email: %s' % result['Message'])
-    elif 'url' not in result['Value'] or 'state' not in result['Value']:
-      gLogger.fatal('Authentification url with state was not genereted by OAuth2service. Sorry sheet happends.')
       sys.exit(1)
-    url = result['Value']['url']
-    state = result['Value']['state']
-    if not url or not state:
+    result = res['Value']
+
+    # Create authorization link
+    state = result['Value'].get('state')
+    if not state:
       gLogger.fatal('Cannot get link for authentication.')
       sys.exit(1)
     url = '%s/oauth?getlink=%s' % (oauthUrl, state)
 
-    gLogger.notice('Use link to authentication..')
-
-    if self.__piParams.addEmail:
-      gLogger.notice('Likn was sent to your email(%s)!' % self.__piParams.Email)
+    # Output authentication link
+    if not webbrowser.open_new_tab(url):
+      if not result['OK']:
+        # Print link in output if it was not sent by email
+        if not self.__piParams.addEmail:
+          gLogger.fatal(result['Message'])
+          sys.exit(1)
+        gLogger.notice('Failed to send mail. URL to continue %s' % url)
+      elif self.__piParams.addEmail:
+        gLogger.notice('Mail was sent.')
+      else:
+        gLogger.notice('URL to continue %s' % url)
     else:
-      if not webbrowser.open_new_tab(url):
-        gLogger.notice('%s\n' % url)
-        if self.__piParams.addQRcode:
-          qrterminal(url)
+      gLogger.notice('Opening %s in browser..' % url)
+    
+    # Show QR code
+    if self.__piParams.addQRcode:
+      qrterminal(url)
+
     # Loop: waiting status of request
-    threading.Thread(target=loading).start()
+    #threading.Thread(target=loading).start()
     addVOMS = self.__piParams.addVOMSExt or Registry.getGroupOption(self.__piParams.diracGroup, "AutoAddVOMS", False)
     res = restRequest(oauthUrl, '/redirect', status=state, group=self.__piParams.diracGroup,
-                      proxy=self.__piParams.IdPproxy, time_out=time_out,
-                      proxyLifeTime=self.__piParams.proxyLifeTime, voms=addVOMS)
+                      proxyLifeTime=self.__piParams.proxyLifeTime, voms=addVOMS,
+                      proxy=True, timeOut=timeOut)
     done = True
     time.sleep(1)
-    # End loop
     if not res['OK']:
       gLogger.error(res['Message'])
       sys.exit(1)
     result = res['Value']
+
+    # Read response result
     if not result['OK']:
       gLogger.error(result['Message'])
       sys.exit(1)
-    if result['Value']['Status'] == 'visitor':
+    if not result['Value']['Status'] == 'authed':
       gLogger.notice(result['Value']['Message'])
       sys.exit(1)
+
     if not self.__piParams.proxyLoc:
       self.__piParams.proxyLoc = '/tmp/x509up_u%s' % os.getuid()
     try:
