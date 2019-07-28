@@ -48,7 +48,7 @@ class OAuthManagerHandler(RequestHandler):
     gLogger.notice("Check token %s." % token)
     return gOAuthDB.fetchToken(accessToken=token)
 
-  types_getStringProxy = [basestring]
+  types_getStringProxy = [basestring, dict]
 
   def export_getStringProxy(self, proxyProvider, userDict):
     """ Get proxy from OAuthDB
@@ -60,7 +60,7 @@ class OAuthManagerHandler(RequestHandler):
     """
     return gOAuthDB.getProxy(proxyProvider, userDict)
 
-  types_getUserDN = [basestring]
+  types_getUserDN = [basestring, dict]
 
   def export_getUserDN(self, proxyProvider, userDict):
     """ Get DN from OAuthDB
@@ -108,15 +108,15 @@ class OAuthManagerHandler(RequestHandler):
     """
     return gOAuthDB.getLinkByState(state)
 
-  types_waitStateResponse = [basestring]
+  types_waitStateResponse = [basestring, basestring, bool, basestring, [int, None]]
 
   def export_waitStateResponse(self, state, group=None, needProxy=False,
                                voms=None, proxyLifeTime=43200, timeOut=20, sleeptime=5):
     """ Listen DB to get status of auth and proxy if needed
 
         :param basestring state: session number
-        :param boolen needProxy: need proxy or not
         :param basestring group: group name for proxy DIRAC group extentional
+        :param boolean needProxy: need proxy or not
         :param basestring voms: voms name
         :param int proxyLifeTime: requested proxy live time
         :param int timeOut: time in a seconds needed to wait result
@@ -198,15 +198,15 @@ class OAuthManagerHandler(RequestHandler):
 
   types_createAuthRequestURL = [basestring]
 
-  def export_createAuthRequestURL(self, idp):
+  def export_createAuthRequestURL(self, providerName):
     """ Register new session and return dict with authorization url and session number
     
-        :param basestring OAuthProvider: provider name
+        :param basestring providerName: provider name
 
         :return: S_OK(dict)/S_ERROR()
     """
-    gLogger.notice("Request to create authority URL for '%s' IdP." % idp)
-    result = gOAuthDB.getAuthorizationURL(idp)
+    gLogger.notice("Request to create authority URL for '%s'." % providerName)
+    result = gOAuthDB.getAuthorizationURL(providerName)
     if not result['OK']:
       return S_ERROR('Cannot create authority request URL.')
     return result

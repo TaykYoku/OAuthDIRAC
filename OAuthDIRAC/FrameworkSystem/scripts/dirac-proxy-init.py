@@ -256,9 +256,9 @@ class ProxyInit(object):
     import webbrowser
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    from halo import Halo
+    #from halo import Halo
 
-    @Halo(spinner='dots')
+    #@Halo(spinner='dots')
     def restRequest(url=None, endpoint='', metod='GET', **kwargs):
       """ Method to do http requests """
       if not url or not kwargs:
@@ -270,7 +270,7 @@ class ProxyInit(object):
             __opts = '%s=%s' % (key, kwargs[key])
           else:
             __opts += '&%s=%s' % (key, kwargs[key])
-      self.spinner.fail()
+      #self.spinner.fail()
       try:
         r = requests.get('%s%s?%s' % (url, endpoint, __opts), verify=False)
         r.raise_for_status()
@@ -390,7 +390,7 @@ class ProxyInit(object):
       qrterminal(url)
 
     # Loop: waiting status of request
-    #threading.Thread(target=loading).start()
+    threading.Thread(target=loading).start()
     addVOMS = self.__piParams.addVOMSExt or Registry.getGroupOption(self.__piParams.diracGroup, "AutoAddVOMS", False)
     res = restRequest(oauthUrl, '/redirect', status=state, group=self.__piParams.diracGroup,
                       proxyLifeTime=self.__piParams.proxyLifeTime, voms=addVOMS,

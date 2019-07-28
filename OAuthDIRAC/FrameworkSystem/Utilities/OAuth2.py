@@ -99,14 +99,11 @@ class OAuth2(requests.Session):
     self.name = name or moreOptions.get('ProxyProviderName')
 
     # Get information from CS
-    # FIXME: need to add to this class ofWhat instance attribute
-    if not self.providerOfWhat:
-      for instance in (getInfoAboutProviders().get('Value') or []):
-        result = getInfoAboutProviders(ofWhat=instance, providerName=self.name)
-        if result['OK']:
-          break
-    else:
-      result = getInfoAboutProviders(ofWhat=self.providerOfWhat, providerName=self.name)
+    for instance in (providerOfWhat and [providerOfWhat] or getInfoAboutProviders().get('Value') or []):
+      result = getInfoAboutProviders(ofWhat=instance, providerName=self.name)
+      if result['OK']:
+        break
+    self.providerOfWhat = instance or None
     if not result['OK']:
       return result
     __csDict = result.get('Value') or {}
@@ -275,12 +272,11 @@ class OAuth2(requests.Session):
 
         :return: S_OK()/S_ERROR()
     """
+    tDict = {'access_token': access_token, 'refresh_token': refresh_token}
     if not self.revocation_endpoint:
       return S_ERROR('Not found revocation endpoint.')
-    for key in {'access_token': access_token, 'refresh_token': refresh_token}:
-      if tDict[key]:
-        r = requests.post("%s?token=%s&token_type_hint=%s" %
-                          (self.revocation_endpoint, tDict[key], key), verify=False)
+    for key in tDict:
+      requests.post("%s?token=%s&token_type_hint=%s" % (self.revocation_endpoint, tDict[key], key), verify=False)
     return S_OK()
 
   def fetchToken(self, code=None, refresh_token=None):

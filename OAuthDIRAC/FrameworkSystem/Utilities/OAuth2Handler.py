@@ -26,6 +26,11 @@ class OAuth2Handler(WebHandler):
   AUTH_PROPS = "all"
   LOCATION = "oauth2"
 
+  def initialize(self):
+    super(OAuth2Handler, self).initialize()
+    self.loggin = gLogger.getSubLogger("OAuth2Handler")
+    return S_OK()
+
   @asyncGen
   def web_oauth(self):
     """ Authentication endpoint, used to:
@@ -47,21 +52,21 @@ class OAuth2Handler(WebHandler):
       
       if getlink:
         # Redirect to authentication endpoint
-        gLogger.notice('%s authorization session flow' % getlink)
+        self.loggin.notice(getlink,' authorization session flow')
         result = yield self.threadTask(gOAuthCli.getLinkByState, getlink)
         if not result['OK']:
-          gLogger.error(result['Message'])
+          self.loggin.error(result['Message'])
           self.finish('%s link has expired!' % getlink)
         else:
-          gLogger.notice('Redirect to %s' % result['Value'])
+          self.loggin.notice('Redirect to %s' % result['Value'])
           self.redirect(result['Value'])
       
       elif idp:
         # Create new authenticate session
-        gLogger.notice('Initialize "%s" authorization flow' % idp)
+        self.loggin.notice('Initialize "%s" authorization flow' % idp)
         result = yield self.threadTask(gOAuthCli.createAuthRequestURL, idp)
         if not result['OK']:
-          gLogger.error(result['Message'])
+          self.loggin.error(result['Message'])
           raise tornado.web.HTTPError(500, result['Message'])
         state = result['Value']['state']
         oauthAPI = getOAuthAPI('Production')
@@ -73,7 +78,7 @@ class OAuth2Handler(WebHandler):
                                          'Authentication throught %s' % idp,
                                          'Please, go throught the link %s to authorize.' % url)
           result['Value'] = {'state': state}
-        gLogger.notice('%s authorization session "%s" provider was created' % (state, idp))
+        self.loggin.notice('%s authorization session "%s" provider was created' % (state, idp))
         self.finish(json.dumps(result))
 
   @asyncGen
@@ -93,33 +98,33 @@ class OAuth2Handler(WebHandler):
         :return: json with requested data
     """
     args = self.request.arguments
-
+    self.loggin.info(args)
     if args:
       code = 'code' in args and args['code'][0]
-      voms = 'voms' in args and args['voms'][0]
+      voms = 'voms' in args and args['voms'][0] or ''
       state = 'state' in args and args['state'][0]
-      group = 'group' in args and args['group'][0]
+      group = 'group' in args and args['group'][0] or ''
       status = 'status' in args and args['status'][0]
-      needProxy = 'proxy' in args and args['proxy'][0]
+      needProxy = 'proxy' in args and (args['proxy'][0] and True)
       error = 'error' in args and ', '.join(args['error'])
       timeOut = 'timeOut' in args and args['timeOut'][0] or None
       proxyLifeTime = 'proxyLifeTime' in args and int(args['proxyLifeTime'][0]) or None
-      error_description = 'error_description' in args and ', '.join(args['error_description'])
+      error_description = 'error_description' in args and ', '.join(args['error_description']) or ''
     
       # Parse response of authentication request
       if code:
         if not state:
           self.finish('No state argument found.')
         else:
-          gLogger.notice('%s session, parsing response with authorization code "%s"' % (state, code))
+          self.loggin.notice('%s session, parsing response with authorization code "%s"' % (state, code))
           result = yield self.threadTask(gOAuthCli.parseAuthResponse, code, state)
           if not result['OK']:
-            gLogger.error(result['Message'])
+            self.loggin.error(result['Message'])
             raise tornado.web.HTTPError(500, result['Message'])
           else:
             oDict = result['Value']
             if oDict['redirect']:
-              gLogger.notice('%s session, redirect to new authorization flow "%s"' % (state, oDict['redirect']))
+              self.loggin.notice('%s session, redirect to new authorization flow "%s"' % (state, oDict['redirect']))
               self.redirect(oDict['redirect'])
             else:
               t = Template('''<!DOCTYPE html>
@@ -132,18 +137,18 @@ class OAuth2Handler(WebHandler):
                   </script>
                 </body>
               </html>''')
-              gLogger.notice('%s session, authorization compleat' % state)
-              self.finish(t.generate(Messages=oDict['Messages']))
+              self.loggin.notice('%s session, authorization complete' % state)
+              self.finish(t.generate(Messages='\n'.join(oDict['Messages'])))
       
       # Get status of authorization and proxy
       elif status:
-        if needProxy:
-          msg = 'and try to return proxy'
-        gLogger.notice('%s session, get status of authorization %s' % (status, msg))
+        self.loggin.notice('%s session, get status of authorization' % status,
+                           needProxy and 'and try to return proxy' or '')
+        self.loggin.notice([status, group, needProxy, voms, proxyLifeTime, timeOut])
         result = yield self.threadTask(gOAuthCli.waitStateResponse, status, group,
                                        needProxy, voms, proxyLifeTime, timeOut)
         if not result['OK']:
-          gLogger.error(result['Message'])
+          self.loggin.error(result['Message'])
           raise tornado.web.HTTPError(500, result['Message'])
         self.finish(json.dumps(result))
 
@@ -156,7 +161,7 @@ class OAuth2Handler(WebHandler):
     
     # Convert hash to request arguments
     else:
-      gLogger.debug('Convert hash to request arguments')
+      self.loggin.debug('Convert hash to request arguments')
       t = Template('''<!DOCTYPE html>
         <html><head><title>Authetication</title>
           <meta charset="utf-8" /></head><body>

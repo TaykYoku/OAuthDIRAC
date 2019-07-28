@@ -443,8 +443,8 @@ class OAuthDB(DB):
     if not oauthDict['redirect']:
       # If not need additional authorization to proxy provider add new user to CS or modify existed
       self.log.notice("%s session, prepere user parameters: %s" % (state, csModDict))
-      if 'noregvos' in csModDict:
-        msg = '%s unsupported by DIRAC. ' % str(csModDict['noregvos'])
+      if csModDict.get('noregvos'):
+        msg = "%s unsupported by DIRAC. " % ', '.join(csModDict['noregvos'])
         msg += 'Please contact with administrators of this VOs to register it in DIRAC.'
         oauthDict['messages'].append(msg)
       for group in csModDict['Groups']:
@@ -501,7 +501,7 @@ class OAuthDB(DB):
       result = self.deleteEntries('Tokens', condDict={'State': rmDict['State']})
       if not result['OK']:
         return result
-    self.log.notice('%s session was killed')
+    self.log.notice(state, 'session was killed')
     return S_OK()
 
   def fetchToken(self, accessToken=None, state=None):
