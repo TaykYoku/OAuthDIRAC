@@ -36,8 +36,23 @@ class OAuthManagerHandler(RequestHandler):
     """ Response initialization
     """
 
-  types_checkToken = [basestring]
+  types_submitAuthorizeFlow = [basestring]
+  def export_submitAuthorizeFlow(self, providerName, session=None):
+    """ Register new session and return dict with authorization url and session number
+    
+        :param basestring providerName: provider name
+        :param basestring session: session identificator
 
+        :return: S_OK(dict)/S_ERROR()
+    """
+    gLogger.notice("Request to create authority URL for '%s'." % providerName)
+    result = gOAuthDB.getAuthorization(providerName, session)
+    if not result['OK']:
+      return S_ERROR('Cannot create authority request URL.')
+    return result
+
+  types_checkToken = [basestring]
+  # FIXME: its needed?
   def export_checkToken(self, token):
     """ Check status of tokens, refresh and back dict.
 
@@ -48,29 +63,29 @@ class OAuthManagerHandler(RequestHandler):
     gLogger.notice("Check token %s." % token)
     return gOAuthDB.fetchToken(accessToken=token)
 
-  types_getStringProxy = [basestring, dict]
+  types_getSessionDict = [basestring, dict]
 
-  def export_getStringProxy(self, proxyProvider, userDict):
-    """ Get proxy from OAuthDB
-        
-        :param basestring proxyProvider: proxy provider name
-        :param dict userDict: user parameters
+  def export_getSessionDict(self, conn, connDict):
+    """ Get username by session number
 
-        :return: S_OK(basestring)/S_ERROR()
+        :param basestring conn: search filter
+        :param dict connDict: parameters that need add to search filter
+
+        :return: S_OK(list(dict))/S_ERROR()
     """
-    return gOAuthDB.getProxy(proxyProvider, userDict)
+    return gOAuthDB.getSessionDict(conn, connDict)
 
-  types_getUserDN = [basestring, dict]
+  type_updateSession = [dict, dict]
 
-  def export_getUserDN(self, proxyProvider, userDict):
-    """ Get DN from OAuthDB
-        
-        :param basestring proxyProvider: proxy provider name
-        :param dict userDict: user parameters
+  def export_updateSession(self, fieldsToUpdate, condDict):
+    """ Update session record
 
-        :return: S_OK(basestring)/S_ERROR()
+        :param dict fieldsToUpdate: fields content that need to update
+        :param dict condDict: parameters that need add to search filter
+
+        :return: S_OK()/S_ERROR()
     """
-    return gOAuthDB.getUserDN(proxyProvider, userDict)
+    return gOAuthDB.updateSession(fieldsToUpdate, condDict=condDict)
 
   types_getUsrnameForState = [basestring]
 
@@ -81,10 +96,7 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    result = gOAuthDB.getFieldByState(state, ['UserName', 'State'])
-    if not result['OK']:
-      return result
-    return S_OK({'username': result['Value']['UserName'], 'state': result['Value']['State']})
+    return gOAuthDB.getUsrnameForState(state)
 
   types_killState = [basestring]
 
@@ -108,10 +120,9 @@ class OAuthManagerHandler(RequestHandler):
     """
     return gOAuthDB.getLinkByState(state)
 
-  types_waitStateResponse = [basestring, basestring, bool, basestring, [int, None]]
+  types_waitStateResponse = [basestring, basestring, bool, basestring, int, int, int]
 
-  def export_waitStateResponse(self, state, group=None, needProxy=False,
-                               voms=None, proxyLifeTime=43200, timeOut=20, sleeptime=5):
+  def export_waitStateResponse(self, state, group, needProxy, voms, proxyLifeTime, timeOut, sleepTime):
     """ Listen DB to get status of auth and proxy if needed
 
         :param basestring state: session number
@@ -120,37 +131,38 @@ class OAuthManagerHandler(RequestHandler):
         :param basestring voms: voms name
         :param int proxyLifeTime: requested proxy live time
         :param int timeOut: time in a seconds needed to wait result
-        :param int sleeptime: time needed to wait between requests
+        :param int sleepTime: time needed to wait between requests
 
         :return: S_OK(dict)/S_ERROR
     """
-    gLogger.notice("%s session, waiting authorization status" % state)
+    timeOut = timeOut > 300 and 300 or timeOut
+    sleepTime = sleepTime >= timeOut and timeOut - 1 or sleepTime
+    gLogger.notice(state, "session, waiting authorization status")
     start = time.time()
     runtime = 0
-    for _i in range(int(int(timeOut) // int(sleeptime))):
-      time.sleep(sleeptime)
+    for _i in range(int(timeOut // sleepTime)):
+      time.sleep(sleepTime)
       runtime = time.time() - start
       if runtime > timeOut:
         gOAuthDB.killSession(state)
         return S_ERROR('Timeout')
-      result = gOAuthDB.getFieldByState(state)
+      result = gOAuthDB.getStatusByState(state)
       if not result['OK']:
         return result
+      resD = result['Value']
 
       # Looking status of OIDC authorization session
-      status = result['Value']['Status']
-      comment = result['Value']['Comment']
+      status = resD['Status']
       gLogger.notice('%s session' % state, status)
-      if status == 'prepared':
+      if status in ['prepared', 'in progress']:
         continue
       elif status == 'visitor':
-        return S_OK({'Status': status, 'Message': comment})
+        return S_OK({'Status': status, 'Message': resD['Comment']})
       elif status == 'failed':
-        return S_ERROR(comment)
+        return S_ERROR(resD['Comment'])
       elif status == 'authed':
-        resD = result['Value']
         if not needProxy:
-          return result
+          return S_OK(resD)
 
         # Need group to continue
         gLogger.notice("%s session, try return proxy" % state)
@@ -172,9 +184,9 @@ class OAuthManagerHandler(RequestHandler):
           result = Registry.getDNProperty(DN, 'Groups')
           if not result['OK']:
             return S_ERROR('Cannot get proxy, %s' % result['Message'])
-          groupList = result['Value']
+          groupList = result['Value'] or []
           if not isinstance(groupList, list):
-            groupList = groupList.split()
+            groupList = groupList.split(', ')
           if group in groupList:
             if voms:
               voms = Registry.getVOForGroup(group)
@@ -196,35 +208,20 @@ class OAuthManagerHandler(RequestHandler):
         return S_ERROR('Not correct status of your request')
     return S_ERROR('Timeout')
 
-  types_createAuthRequestURL = [basestring]
+  types_parseAuthResponse = [dict, basestring]
 
-  def export_createAuthRequestURL(self, providerName):
-    """ Register new session and return dict with authorization url and session number
-    
-        :param basestring providerName: provider name
-
-        :return: S_OK(dict)/S_ERROR()
-    """
-    gLogger.notice("Request to create authority URL for '%s'." % providerName)
-    result = gOAuthDB.getAuthorizationURL(providerName)
-    if not result['OK']:
-      return S_ERROR('Cannot create authority request URL.')
-    return result
-
-  types_parseAuthResponse = [basestring]
-
-  def export_parseAuthResponse(self, code, state):
+  def export_parseAuthResponse(self, response, state):
     """ Fill session by user profile, tokens, comment, OIDC authorize status, etc.
         Prepare dict with user parameters, if DN is absent there try to get it.
         Create new or modify existend DIRAC user and store the session
 
-        :param basestring code: authorization code
+        :param dict response: authorization response
         :param basestring state: session number
 
         :return: S_OK(dict)/S_ERROR
     """
-    gLogger.notice('%s session get response with code "%s" to process' % (state, code))
-    return gOAuthDB.parseAuthResponse(code, state)
+    gLogger.notice('%s session get response "%s"' % (state, response))
+    return gOAuthDB.parseAuthResponse(response, state)
 
   @staticmethod
   def __cleanOAuthDB():
