@@ -24,18 +24,13 @@ __RCSID__ = "$Id$"
 
 class Params(ProxyGeneration.CLIParams):
 
-  IdP = ''
+  provider = ''
   addEmail = False
-  addOAuth = False
   addQRcode = False
   addVOMSExt = False
+  addProvider = False
   uploadProxy = False
   uploadPilot = False
-
-  def setOAuth(self, arg):
-    self.IdP = arg
-    self.addOAuth = True
-    return S_OK()
 
   def setEmail(self, arg):
     self.Email = arg
@@ -44,6 +39,11 @@ class Params(ProxyGeneration.CLIParams):
 
   def setQRcode(self, _arg):
     self.addQRcode = True
+    return S_OK()
+
+  def setProvider(self, arg):
+    self.provider = arg
+    self.addProvider = True
     return S_OK()
 
   def setVOMSExt(self, _arg):
@@ -58,8 +58,8 @@ class Params(ProxyGeneration.CLIParams):
     ProxyGeneration.CLIParams.registerCLISwitches(self)
     Script.registerSwitch("U", "upload", "Upload a long lived proxy to the ProxyManager", self.setUploadProxy)
     Script.registerSwitch("e:", "email:", "Send oauth authentification url on email", self.setEmail)
-    Script.registerSwitch("O:", "OAuth:", "Set OAuth2 IdP for authentification", self.setOAuth)
-    Script.registerSwitch("q", "qrcode", "Print link as QR code", self.setQRcode)
+    Script.registerSwitch("P:", "Provider:", "Set provider name for authentification", self.setProvider)
+    Script.registerSwitch("Q", "qrcode", "Print link as QR code", self.setQRcode)
     Script.registerSwitch("M", "VOMS", "Add voms extension", self.setVOMSExt)
     
 
@@ -256,9 +256,9 @@ class ProxyInit(object):
     import webbrowser
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    from halo import Halo
+    #from halo import Halo
 
-    @Halo(spinner='dots')
+    #@Halo(spinner='dots')
     def restRequest(url=None, endpoint='', metod='GET', **kwargs):
       """ Method to do http requests """
       if not url or not kwargs:
@@ -270,7 +270,7 @@ class ProxyInit(object):
             __opts = '%s=%s' % (key, kwargs[key])
           else:
             __opts += '&%s=%s' % (key, kwargs[key])
-      self.spinner.fail()
+      #self.spinner.fail()
       try:
         r = requests.get('%s%s?%s' % (url, endpoint, __opts), verify=False)
         r.raise_for_status()
@@ -340,7 +340,7 @@ class ProxyInit(object):
           __qr += ' \033[0m\n'
         gLogger.notice(__qr)
 
-    gLogger.notice('OAuth authentification from %s.' % self.__piParams.IdP)
+    gLogger.notice('Authentification from %s.' % self.__piParams.provider)
 
     # Get https endpoint of OAuthService API from http API of ConfigurationService
     confUrl = gConfig.getValue("/LocalInstallation/ConfigurationServerAPI")
@@ -349,15 +349,15 @@ class ProxyInit(object):
       sys.exit(1)
     res = restRequest(confUrl, '/get', **{'option': '/Systems/Framework/Production/URLs/OAuthAPI'})
     if not res['OK']:
-      gLogger.fatal('Cannot get http url of oauth server:\n %s' % res['Message'])
+      gLogger.fatal('Cannot get URL of authentication server:\n %s' % res['Message'])
       sys.exit(1)
-    oauthUrl = res['Value']
+    authAPI = res['Value']
     
     # Submit authorization session
-    params = {'IdP': self.__piParams.IdP}
+    params = {'provider': self.__piParams.provider}
     if self.__piParams.addEmail:
       params['email'] = self.__piParams.Email
-    res = restRequest(oauthUrl, '/oauth', **params)
+    res = restRequest(authAPI, '/auth', **params)
     if not res['OK']:
       gLogger.fatal(res['Message'])
       sys.exit(1)
@@ -368,31 +368,33 @@ class ProxyInit(object):
     if not state:
       gLogger.fatal('Cannot get link for authentication.')
       sys.exit(1)
-    url = '%s/oauth?getlink=%s' % (oauthUrl, state)
 
-    # Output authentication link
-    if not webbrowser.open_new_tab(url):
-      if not result['OK']:
-        # Print link in output if it was not sent by email
-        if not self.__piParams.addEmail:
-          gLogger.fatal(result['Message'])
-          sys.exit(1)
-        gLogger.notice('Failed to send mail. URL to continue %s' % url)
-      elif self.__piParams.addEmail:
-        gLogger.notice('Mail was sent.')
+    if result['Value']['Status'] == 'needToAuth':
+      url = '%s/auth?getlink=%s' % (authAPI, state)
+
+      # Output authentication link
+      if not webbrowser.open_new_tab(url):
+        if not result['OK']:
+          # Print link in output if it was not sent by email
+          if not self.__piParams.addEmail:
+            gLogger.fatal(result['Message'])
+            sys.exit(1)
+          gLogger.notice('Failed to send mail. URL to continue %s' % url)
+        elif self.__piParams.addEmail:
+          gLogger.notice('Mail was sent.')
+        else:
+          gLogger.notice('URL to continue %s' % url)
       else:
-        gLogger.notice('URL to continue %s' % url)
-    else:
-      gLogger.notice('Opening %s in browser..' % url)
-    
-    # Show QR code
-    if self.__piParams.addQRcode:
-      qrterminal(url)
+        gLogger.notice('Opening %s in browser..' % url)
+      
+      # Show QR code
+      if self.__piParams.addQRcode:
+        qrterminal(url)
 
     # Loop: waiting status of request
-    #threading.Thread(target=loading).start()
+    threading.Thread(target=loading).start()
     addVOMS = self.__piParams.addVOMSExt or Registry.getGroupOption(self.__piParams.diracGroup, "AutoAddVOMS", False)
-    res = restRequest(oauthUrl, '/redirect', status=state, group=self.__piParams.diracGroup,
+    res = restRequest(authAPI, '/status', status=state, group=self.__piParams.diracGroup,
                       proxyLifeTime=self.__piParams.proxyLifeTime, voms=addVOMS,
                       proxy=True, timeOut=timeOut)
     done = True
@@ -438,7 +440,7 @@ if __name__ == "__main__":
   DIRAC.gConfig.setOptionValue("/DIRAC/Security/UseServerCertificate", "False")
 
   pI = ProxyInit(piParams)
-  if piParams.addOAuth:
+  if piParams.addProvider:
     resultDoMagic = pI.doOAuthMagic()
   else:
     resultDoMagic = pI.doTheMagic()
