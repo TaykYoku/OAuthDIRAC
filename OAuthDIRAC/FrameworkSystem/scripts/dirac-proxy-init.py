@@ -364,7 +364,7 @@ class ProxyInit(object):
     result = res['Value']
 
     # Create authorization link
-    state = result['Value'].get('state')
+    state = result['Value'].get('Session')
     if not state:
       gLogger.fatal('Cannot get link for authentication.')
       sys.exit(1)
@@ -392,6 +392,100 @@ class ProxyInit(object):
         qrterminal(url)
 
     # Loop: waiting status of request
+    # ####################################################
+    # # FIXME: use socket
+    # import json
+    # from tornado.ioloop import IOLoop, PeriodicCallback
+    # from tornado import gen
+    # from tornado.websocket import websocket_connect
+    # from tornado.httpclient import HTTPRequest
+    # class WebsocketClient(object):
+    #     def __init__(self, url, timeout, group, proxyLifeTime):
+    #         self.url = url
+    #         self.timeout = timeout
+    #         self.ioloop = IOLoop.instance()
+    #         self.ws = None
+    #         self.msg = None
+    #         self.connect()
+    #         self.group = group
+    #         self.proxyLifeTime = proxyLifeTime
+
+    #         #PeriodicCallback(self.keep_alive, 20000).start()
+    #         #self.ioloop.start()
+
+    #     @gen.coroutine
+    #     def connect(self):
+    #         print "trying to connect"
+    #         try:
+    #             self.ws = yield websocket_connect(HTTPRequest(self.url, validate_cert=False))
+    #         except Exception, e:
+    #             print "connection error"
+    #             print(e)
+    #         else:
+    #             print "connected"
+    #             print "write msg"
+    #             self.ws.write_message(json.dumps({'status': state, 'group': self.group,
+    #                                               'proxyLifeTime': self.proxyLifeTime, 'voms': addVOMS,
+    #                                               'proxy': True, 'timeOut': timeOut}))
+    #             result = {}
+    #             while 'OK' not in result:
+    #               self.msg = yield self.ws.read_message()
+    #               result = json.loads(self.msg)
+    #               print(result)
+    #               if 'StatusMsg' in result:
+    #                 print "========="
+    #                 print(result['StatusMsg'])
+    #               if self.msg is None:
+    #                   print "connection closed"
+    #                   self.ws = None
+    #                   break
+    #             done = True
+
+    #     def keep_alive(self):
+    #         if self.ws is None:
+    #           self.connect()
+    #         else:
+    #           print "write msg"
+    #           self.ws.write_message(json.dumps({'status': state}))
+    
+    # addVOMS = self.__piParams.addVOMSExt or Registry.getGroupOption(self.__piParams.diracGroup, "AutoAddVOMS", False)
+    # client = WebsocketClient("%s/status" % authAPI.replace('https', 'wss'), 5, self.__piParams.diracGroup, self.__piParams.proxyLifeTime)
+    # while done == False:
+    #   pass
+    # # print "write msg"
+    # # client.ws.write_message(json.dumps({'status': state, 'group': self.__piParams.diracGroup,
+    # #                                     'proxyLifeTime': self.__piParams.proxyLifeTime, 'voms': addVOMS,
+    # #                                     'proxy': True, 'timeOut': timeOut}))
+    # # client.ws.write_message(json.dumps({'status': state}))
+
+    # # @gen.coroutine
+    # # def ws_connect(self):
+    # #     ws = yield websocket_connect(HTTPRequest("%s/status" % authAPI.replace('https', 'wss'), validate_cert=False))
+    # #     raise gen.Return(ws)
+    
+    # # ws = self.ws_connect()
+    # # # print "trying to connect"
+    # # # try:
+    # # #     ws = yield websocket_connect(HTTPRequest("%s/status" % authAPI.replace('https', 'wss'), validate_cert=False))
+    # # # except Exception, e:
+    # # #     print "connection error"
+    # # #     print(e)
+    # # #     sys.exit(1)
+    # # print "connected"
+    # # print "Sent request"
+    # # ws.write_message(json.dumps({'status': state}))
+    # # while True:
+    # #   msg = yield ws.read_message()
+    # #   if msg is None:
+    # #       print "connection closed"
+    # #       ws = None
+    # #       sys.exit(1)
+    # #       break
+    # # print "MSG:"
+    # # print(msg)
+    # # sys.exit(0)
+    # #####################################################
+
     threading.Thread(target=loading).start()
     addVOMS = self.__piParams.addVOMSExt or Registry.getGroupOption(self.__piParams.diracGroup, "AutoAddVOMS", False)
     res = restRequest(authAPI, '/status', status=state, group=self.__piParams.diracGroup,
@@ -417,9 +511,6 @@ class ProxyInit(object):
     try:
       with open(self.__piParams.proxyLoc, 'w') as fd:
         fd.write(result['Value']['proxy'].encode("UTF-8"))
-    except Exception as e:
-      return S_ERROR("%s :%s" % (self.__piParams.proxyLoc, repr(e).replace(',)', ')')))
-    try:
       os.chmod(self.__piParams.proxyLoc, stat.S_IRUSR | stat.S_IWUSR)
     except Exception as e:
       return S_ERROR("%s :%s" % (self.__piParams.proxyLoc, repr(e).replace(',)', ')')))
