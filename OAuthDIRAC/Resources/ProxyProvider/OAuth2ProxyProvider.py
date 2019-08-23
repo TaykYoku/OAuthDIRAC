@@ -23,6 +23,7 @@ class OAuth2ProxyProvider(ProxyProvider):
   def setParameters(self, parameters):
     self.parameters = parameters
     self.oauth2 = OAuth2(parameters['IdProvider'])
+    self.oauth = OAuthManagerClient()
   
   def checkStatus(self, userDict=None, sessionDict=None):
     """ Read ready to work status of proxy provider
@@ -68,7 +69,7 @@ class OAuth2ProxyProvider(ProxyProvider):
 
       # Search access tokens
       self.log.notice('Search access token for proxy request')
-      result = OAuthManagerClient().getSessionDict(__conn, __params)
+      result = self.oauth.getSessionDict(__conn, __params)
       if not result['OK']:
         return result
       self.log.notice('Search access token result: ', result)
@@ -96,7 +97,7 @@ class OAuth2ProxyProvider(ProxyProvider):
           self.log.notice('Tokens of %s successfully updated.' % sessionDict['Provider'])
           tD = result['Value']
           exp_datetime = 'ADDDATE(UTC_TIMESTAMP(), INTERVAL %s SECOND)' % tD.get('expires_in') or 0
-          result = OAuthManagerClient().updateSession({'ExpiresIn': exp_datetime,
+          result = self.oauth.updateSession({'ExpiresIn': exp_datetime,
                                                        'Token_type': tD['token_type'],
                                                        'AccessToken': tD['access_token']},
                                                       {'AccessToken': sessionDict['Access_token']})
@@ -132,6 +133,17 @@ class OAuth2ProxyProvider(ProxyProvider):
       if result['OK']:
         self.log.info('Proxy is taken')
         break
+      
+      # Kill session
+      res = self.oauth.getSessionDict('', {'AccessToken': accessToken, 'Provider': self.parameters['IdProvider']})
+      if not res['OK']:
+        return res
+      # self.log.info('======>>>>:', result['Value'])
+      for i in range(0, len(result['Value'])):
+        res = self.oauth.killState(result['Value'][i].get('State'))
+        if not res['OK']:
+          self.log.error('Cannot kill %s' % result['Value'][i].get('State'), res['Message'])
+
     if not result['OK']:
       return result
     proxyStr = result['Value']
@@ -176,7 +188,7 @@ class OAuth2ProxyProvider(ProxyProvider):
         __params['Sub'] = sub
       
       # Search user DN in DB
-      result = OAuthManagerClient().getSessionDict(__conn, __params)
+      result = self.oauth.getSessionDict(__conn, __params)
       if not result['OK']:
         return result
       gotDN = result['Value'] and result['Value'][0].get('DN')
