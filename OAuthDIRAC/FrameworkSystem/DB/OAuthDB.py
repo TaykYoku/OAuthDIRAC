@@ -14,6 +14,7 @@ from DIRAC.ConfigurationSystem.Client.CSAPI import CSAPI
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry
 from DIRAC.ConfigurationSystem.Client.Helpers.Resources import getInfoAboutProviders
 from DIRAC.Resources.ProxyProvider.ProxyProviderFactory import ProxyProviderFactory
+from DIRAC.FrameworkSystem.Client.NotificationClient import NotificationClient
 
 from OAuthDIRAC.Resources.IdProvider.IdProviderFactory import IdProviderFactory
 
@@ -29,7 +30,7 @@ class OAuthDB(DB):
                                        'Sub': 'VARCHAR(128)',
                                        'State': 'VARCHAR(64) NOT NULL',
                                        'Status': 'VARCHAR(32) DEFAULT "prepared"',
-                                       'Comment': 'VARCHAR(2000) DEFAULT ""',
+                                       'Comment': 'MEDIUMBLOB',
                                        'Provider': 'VARCHAR(255) NOT NULL',
                                        'TokenType': 'VARCHAR(32) DEFAULT "bearer"',
                                        'AccessToken': 'VARCHAR(1000)',
@@ -107,9 +108,10 @@ class OAuthDB(DB):
     sessionDict = {'State': state}
     if state:
       self.log.info('Search %s session for' % state, providerName)
-      result = self.__getFields(State=state, Provider=providerName)
+      result = self.__getFields(conn="State IN ( 'in progress', 'authed' )", State=state, Provider=providerName)
       if not result['OK']:
         return result
+      self.log.notice('Search result -->:', result['Value'])
       sessionDict = result['Value'] and result['Value'][0] or sessionDict
 
     # Check work status
@@ -139,6 +141,7 @@ class OAuthDB(DB):
         return S_ERROR('No authentication URL or status created.')
 
       # Create new session
+      self.log.info("StatusDict to insert DB:", statusDict)
       result = self.insertFields('Sessions', ['State', 'Provider', 'Comment', 'LastAccess'],
                                              [statusDict['Session'], providerName, statusDict['URL'],
                                               'UTC_TIMESTAMP()'])
@@ -174,6 +177,9 @@ class OAuthDB(DB):
 
         :return: S_OK(dict)/S_ERROR
     """
+    # # Kill possible redirect session for current
+    # result = self.killSession(state + '_redirect')
+
     result = self.updateSession({'Status': 'in progress'}, state=state)
     if not result['OK']:
       return result
@@ -195,12 +201,24 @@ class OAuthDB(DB):
         self.updateSession({'Status': 'failed', 'Comment': result['Message']}, state=__state)
       self.log.error(state, 'session error: %s' % result['Message'])
       return result
-    comment = result['Value']
-
+    comment = result['Value']['Notify']
+    __mail = result['Value'].get('EMailObj')
+    
+    if __mail:
+      addresses = Registry.getEmailsForGroup('dirac_admin')
+      self.log.info("%s session, send mail to admins:" % state, addresses)
+      result = NotificationClient().sendMail('andrii.lytovchenko.workmail@gmail.com', subject=__mail['subject'], body=__mail['body'])
+      if not result['OK']:
+        for __state in list(set([state, state.replace('_redirect', '')])):
+          self.updateSession({'Status': 'failed', 'Comment': result['Message']}, state=__state)
+        self.log.error(state, 'session error: %s' % result['Message'])
+        return result
+    
     for __state in list(set([state, state.replace('_redirect', '')])):
       result = self.updateSession({'Status': 'authed', 'Comment': comment}, state=__state)
       if not result['OK']:
         return result
+
     return S_OK({'redirect': '', 'Messages': comment})
 
   def __parse(self, response, state):
@@ -292,6 +310,11 @@ class OAuthDB(DB):
     if not result['OK']:
       return result
     __pProvider = result['Value']
+    __idPOfProxyProvider = __pProvider.parameters.get('IdProvider')
+
+    if __idPOfProxyProvider and not __idPOfProxyProvider == providerName:
+      # Current identity provider is not correct for proxy provider, so this state is not match
+      sessionDict['State'] = None
 
     # Check if proxy provider ready
     __userDict = parseDict['UsrOptns'].copy()
@@ -302,37 +325,39 @@ class OAuthDB(DB):
     ppStatus = result['Value']['Status']
 
     if not ppStatus == 'ready':
+
       if ppStatus == 'needToAuth':
         # Initiate second authentication flow
-        idP = __pProvider.parameters.get('IdProvider')
-        if not idP:
+        if not __idPOfProxyProvider:
           return S_ERROR('Cannot find IdProvider for %s' % proxyProviderName)
-        if idP == providerName:
+        if __idPOfProxyProvider == providerName:
           return S_ERROR('%s ask authentication in current IdProvider after authentication response.' % proxyProviderName)
-        self.log.info(state, 'session, %s proxy provider ask authentication throught %s' % (proxyProviderName, idP))
-        result = self.getAuthorization(idP, state + '_redirect')
+        self.log.info(state, 'session, %s proxy provider ask authentication throught %s' % (proxyProviderName, __idPOfProxyProvider))
+        result = self.getAuthorization(__idPOfProxyProvider, state + '_redirect')
         if not result['OK']:
           return result
-        parseDict['SourceProxyProvider'] = proxyProviderName
-        
-        # Make bakup of current dict
-        sourceDict = json.dumps(parseDict)
-        for __state in list(set([state, state.replace('_redirect', '')])):
-          self.updateSession({'Status': 'in progress', 'Comment': sourceDict}, state=__state)
+        self.log.notice('Result ===>>>', result)
+        if result['Value']['Status'] == 'needToAuth':
+          url = result['Value']['URL']
+          parseDict['SourceProxyProvider'] = proxyProviderName
+          
+          # Make bakup of current dict
+          sourceDict = json.dumps(parseDict)
+          self.log.info('sourceDict STORED INFO ++++++', sourceDict)
+          result = self.updateSession({'Status': 'in progress', 'Comment': sourceDict}, state=state)
           if not result['OK']:
             return result
-        
-        # Redirection
-        self.log.info(state, 'session, submit one more authentication flow for %s' % idP)
-        return S_OK({'redirect': result['Value']['URL']})
+          
+          # Redirection
+          self.log.info(state, 'session, submit one more authentication flow for %s' % __idPOfProxyProvider)
+          return S_OK({'redirect': url})
 
-      else:
-        # Fail
-        for __state in list(set([state, state.replace('_redirect', '')])):
-          self.updateSession({'Status': 'fail', 'Comment': 'Not correct proxy provider status: %s' % ppStatus}, state=__state)
-          if not result['OK']:
-            return result
-        return S_ERROR('Not correct proxy provider status')
+      # Fail
+      for __state in list(set([state, state.replace('_redirect', '')])):
+        self.updateSession({'Status': 'fail', 'Comment': 'Not correct proxy provider status: %s' % ppStatus}, state=__state)
+        if not result['OK']:
+          return result
+      return S_ERROR('Not correct proxy provider status')
 
     # Get user DN
     self.log.info(state, 'session, %s proxy provider ready to work, try to get user DN' % proxyProviderName)
@@ -372,12 +397,19 @@ class OAuthDB(DB):
         :param dict parseDict: prepared dictionary with parsed response
         :param basestring state: session number
         
-        :return: S_OK()/S_ERROR()
+        :return: S_OK(basestring)/S_ERROR() -- basestring contain message
     """
+    __mail = {}
+    __mail['subject'] = "[OAuthManager]"
+    __mail['body'] = "This notification from DIRAC OAuthManager service, please do not replay.\n"
+    __mail['body'] += "\nUser was autheticated trought %s.\n"
+
     # Notify about no registred VOs that exist in response information
     notify = ''
     if parseDict.get('noregvos'):
-      notify = "%s unsupported by DIRAC. " % ', '.join(parseDict['noregvos'])
+      __mail['body'] += "In authetication response information was found unsupported by DIRAC VOs:\n"
+      __mail['body'] += "  %s\n" % ', '.join(parseDict['noregvos'])
+      notify = "If %s are VOs, there are unsupported by DIRAC. " % ', '.join(parseDict['noregvos'])
       notify += 'Please contact with administrators of this VOs to register it in DIRAC.'
 
     # Visitor check
@@ -387,43 +419,66 @@ class OAuthDB(DB):
         comment += 'So, your profile has the same access that Visitor DIRAC user.'
         comment += notify and '\nOne more thing.. \n    ' + notify or ''
         for __state in list(set([state, state.replace('_redirect', '')])):
-          self.updateSession({'Status': 'visitor', 'Comment': comment}, state=__state)
+          result = self.updateSession({'Status': 'visitor', 'Comment': comment}, state=__state)
           if not result['OK']:
             return result
-        return S_OK(comment)
+        return S_OK({'Notify': comment})
       elif not parseDict['UsrOptns']['DN']:
         comment = 'No any user DN found. '
         comment += 'So, your profile has the same access that Visitor DIRAC user.'
         comment += notify and '\nOne more thing.. \n    ' + notify or ''
         for __state in list(set([state, state.replace('_redirect', '')])):
-          self.updateSession({'Status': 'visitor', 'Comment': comment}, state=__state)
+          result = self.updateSession({'Status': 'visitor', 'Comment': comment}, state=__state)
           if not result['OK']:
             return result
-        return S_OK(comment)
+        return S_OK({'Notify': comment})
 
     # Add new user to CS or modify existed
     self.log.info("%s session, user parameters to add to CS: %s" % (state, parseDict))
 
-    # Add new groups
-    for group in parseDict['Groups']:
-      group['Users'] = parseDict['username']
-      result = gCSAPI.addGroup(group, parseDict['Groups'][group])
+    # Read allowed flag in CS
+    __mergeAllow = gConfig.getValue('/Systems/Framework/Production/Services/OAuthManager/AutoMerge', False)
+
+    if not __mergeAllow:
+      __mail['body'] += "\nAuto merge is not allow. Need to merge user by hand."
+      __mail['body'] += "\n  User: %s" % parseDict['username']
+      __mail['body'] += "\n  User profile:\n%s" % parseDict['UsrOptns']
+      __mail['body'] += "\n  New groups:\n%s" % parseDict['Groups']
+    else:
+      # Refresh CS
+      result = gCSAPI.downloadCSData()
+      if not result['OK']:
+        return result
+
+      # Add new groups
+      for group in parseDict['Groups']:
+        groupName, groupParams = group.items()[0]
+        groupParams['Users'] = parseDict['username']
+        result = gCSAPI.addGroup(groupName, groupParams)
+        if not result['OK']:
+          return result
+      __mail['body'] += "\n  Groups that was added to CS with user %s:\n  %s" % (parseDict['username'], parseDict['Groups'])
+      
+      # Modify/add user
+      for k, v in parseDict['UsrOptns'].items():
+        if isinstance(v, list) and not k == 'Groups':
+          parseDict['UsrOptns'][k] = ', '.join(v)
+      result = gCSAPI.modifyUser(parseDict['username'], parseDict['UsrOptns'], True)
+      if not result['OK']:
+        return result
+      __mail['body'] += "\n  User %s was modified with profile:\n  %s" % (parseDict['username'], parseDict['UsrOptns'])
+
+      # Commit
+      result = gCSAPI.commitChanges()
+      if not result['OK']:
+        return result
+
+      # Force refresh
+      result = gCSAPI.forceGlobalConfigurationUpdate()
       if not result['OK']:
         return result
     
-    # Modify/add user
-    for k, v in parseDict['UsrOptns'].items():
-      if isinstance(v, list) and not k == 'Groups':
-        parseDict['UsrOptns'][k] = ', '.join(v)
-    result = gCSAPI.modifyUser(parseDict['username'], parseDict['UsrOptns'], True)
-    if not result['OK']:
-      return result
-    
-    # Commit
-    result = gCSAPI.commitChanges()
-    if not result['OK']:
-      return result
-    return S_OK(notify)
+    return S_OK({'Notify': notify, 'EMailObj': __mail})
 
   def getUsrnameForState(self, state):
     """ Get username by session number
@@ -528,6 +583,9 @@ class OAuthDB(DB):
 
         :return: S_OK(dict,basestring)/S_ERROR()
     """
+    self.log.info('Convert user profile to parameters dictionaries and user name that needed to modify CS')
+    self.log.info('Parse dictionary:', parseDict)
+    self.log.info('Source dictionary:', sourceDict)
     resDict = {}
     resDict['Groups'] = parseDict['Groups']
     resDict['username'] = parseDict['username']
@@ -559,6 +617,7 @@ class OAuthDB(DB):
       result = Registry.getUserDict(resDict['username'])
       if not result['OK']:
         return result
+      self.log.info('Found existed user "%s"' % resDict['username'], 'with next profile: %s' % result['Value'])
       resDict['UsrOptns'] = result['Value']
       resDict['UserExist'] = 'Yes'
 
@@ -585,13 +644,24 @@ class OAuthDB(DB):
     if sourceDict:
       # If we found some exist user we will write new changes to there,
       # if found two users or no one we will write changes to user that match with first authentication flow
-      baseDict = not sourceDict['UserExist'] and resDict['UserExist'] and resDict or sourceDict
-      addDict = baseDict == resDict and sourceDict or resDict
+      baseDict = resDict if not sourceDict['UserExist'] and resDict['UserExist'] else sourceDict
+      addDict = sourceDict if baseDict == resDict else resDict
 
       # Merge information
-      baseDict['Groups'] += list(set(addDict['Groups']) - set(baseDict['Groups']))
-      baseDict['noregvos'] += list(set(addDict['noregvos']) - set(baseDict['noregvos']))
+      # New groups
+      baseGroups, addGroups = [], []
+      for __groups, __dict in [(baseGroups, baseDict), (addGroups, addDict)]:
+        for d in __dict['Groups'] or [{}]:
+          if d.keys():
+            __groups.append(d.keys()[0])
 
+      for __group in list(set(addGroups) - set(baseGroups)):
+        baseDict['Groups'].append(addDict['Groups'][__group])
+
+      # No registred groups
+      baseDict['noregvos'] = list(set(addDict['noregvos'] + baseDict['noregvos']))
+
+      # User options
       for k, vAdd in addDict['UsrOptns'].items():
         if vAdd:
           if not isinstance(vAdd, list):
@@ -610,9 +680,15 @@ class OAuthDB(DB):
           else:
             baseDict['UsrOptns'][k] = vAdd
       resDict = baseDict.copy()
+    
+    # Convert to string all, but not "Groups"
     for k, v in resDict['UsrOptns'].items():
-      if isinstance(v, list) and not k == 'Groups':
-        resDict['UsrOptns'][k] = ', '.join(v)
+      if isinstance(v, list):
+        if k == 'Groups':
+          resDict['UsrOptns'][k] = list(set(resDict['UsrOptns'][k]))
+        else:
+          resDict['UsrOptns'][k] = ', '.join(v)
+    self.log.info('Information merged:', resDict)
     return S_OK(resDict)
 
   def __getFields(self, fields=None, conn=None, timeStamp=False, **kwargs):
