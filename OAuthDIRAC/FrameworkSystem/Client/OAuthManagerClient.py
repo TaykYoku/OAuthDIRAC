@@ -32,7 +32,7 @@ class OAuthManagerClient(Client):
     voms = voms or ''
     group = group or ''
     needProxy = bool(needProxy)
-    timeOut = timeOut and int(timeOut) or 20
+    timeOut = timeOut and int(timeOut) or 10
     sleepTime = sleepTime and int(sleepTime) or 5
     proxyLifeTime = proxyLifeTime and int(proxyLifeTime) or 43200
     return self._getRPC().waitStateResponse(state, group, needProxy, voms, proxyLifeTime, timeOut, sleepTime)
