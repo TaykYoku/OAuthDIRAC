@@ -228,7 +228,7 @@ class OAuth2(Session):
     """
     url = url or self.parameters['issuer'] and '%s/.well-known/openid-configuration' % self.parameters['issuer']
     if not url:
-      return S_ERROR('Cannot get %s provider issuer/wellKnow url' % oauthProvider)
+      return S_ERROR('Cannot get %s provider issuer/wellKnow url' % self.parameters['name'])
     try:
       r = self.request('GET', url)
       r.raise_for_status()
