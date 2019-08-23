@@ -78,7 +78,7 @@ class OAuth2Handler(WebHandler):
       if result['Value']['Status'] == 'ready':
         pass
       elif result['Value']['Status'] == 'needToAuth':
-        state = result['Value']['state']
+        state = result['Value']['Session']
         oauthAPI = getOAuthAPI('Production')
         if not oauthAPI:
           raise tornado.web.HTTPError(500, 'Cannot find redirect URL.')
@@ -154,14 +154,12 @@ class OAuth2Handler(WebHandler):
           <html><head><title>Authetication</title>
             <meta charset="utf-8" /></head><body>
               {{ Messages }} <br>
-              Done! You can close this window.
-              <script type="text/javascript">
-                window.close();
-              </script>
+              Done! You can <button onclick="self.close()">close</button> this window.
             </body>
           </html>''')
           self.loggin.info(self.args['state'], 'session, authorization complete')
-          self.finish(t.generate(Messages='\n'.join(oDict['Messages'])))
+          self.loggin.info(oDict['Messages'])
+          self.finish(t.generate(Messages=oDict['Messages']))
 
   def __convertHashToArgs(self):
     """ Convert hash to request arguments
