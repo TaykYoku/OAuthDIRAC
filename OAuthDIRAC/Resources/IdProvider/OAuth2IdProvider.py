@@ -34,6 +34,7 @@ class OAuth2IdProvider(IdProvider):
                  - 'Status' with ready to work status[ready, needToAuth]
                  - 'AccessToken' with list of access token
     """
+    self.log.info("Session dict ===>>", sessionDict)
     refreshToken = sessionDict and sessionDict.get('RefreshToken')
     state = sessionDict and sessionDict.get('State')
     if state:
@@ -104,11 +105,14 @@ class OAuth2IdProvider(IdProvider):
     vomsRoleRegex = self.parameters.get('Syntax/VOMS/role')
     if not vomsClaim or not vomsVORegex or not vomsRoleRegex and not resDict['UsrOptns']['Groups']:
       self.log.warn('No "DiracGroups", no claim with VO decsribe in Syntax/VOMS section found.')
+    elif not responseD['UserProfile'].get(vomsClaim) and not resDict['UsrOptns']['Groups']:
+      self.log.warn('No "DiracGroups", no claim "%s" that decsribe VOs found.' % vomsClaim)
     else:
       claimVOList = responseD['UserProfile'][vomsClaim]
       if not isinstance(claimVOList, list):
         claimVOList = claimVOList.split(',')
       
+      # FIXME: need to use re.match() and groupdict()
       # Parse claim info to find DIRAC groups
       for item in claimVOList:
         if re.search(vomsVORegex.replace('<VALUE>', '.*'), item):
