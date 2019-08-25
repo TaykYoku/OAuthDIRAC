@@ -138,11 +138,12 @@ class OAuth2ProxyProvider(ProxyProvider):
       res = self.oauth.getSessionDict('', {'AccessToken': accessToken, 'Provider': self.parameters['IdProvider']})
       if not res['OK']:
         return res
-      # self.log.info('======>>>>:', result['Value'])
-      for i in range(0, len(result['Value'])):
-        res = self.oauth.killState(result['Value'][i].get('State'))
+      # self.log.info('======>>>>:', res['Value'])
+      for i in range(0, len(res['Value'])):
+        state = res['Value'][i]['State']
+        res = self.oauth.killState(state)
         if not res['OK']:
-          self.log.error('Cannot kill %s' % result['Value'][i].get('State'), res['Message'])
+          self.log.error('Cannot kill %s' % state, res['Message'])
 
     if not result['OK']:
       return result
