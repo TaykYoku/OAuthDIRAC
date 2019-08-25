@@ -54,7 +54,7 @@ class OAuth2IdProvider(IdProvider):
   def parseAuthResponse(self, response):
     """ Make user info dict:
           - username(preferd user name)
-          - noregvos(VOs in response that not in DIRAC)
+          - nosupport(VOs in response that not in DIRAC)
           - UsrOptns(User profile that convert to DIRAC user options)
           - Tokens(Contain refreshed tokens, type and etc.)
           - Groups(New DIRAC groups that need created)
@@ -98,12 +98,13 @@ class OAuth2IdProvider(IdProvider):
     resDict['UsrOptns']['FullName'] = gname and fname and ' '.join([gname, fname]) or name and ' '.join(name) or ''
     
     # Get regex syntax to parse VOs info
-    resDict['Groups'] = []
-    resDict['noregvos'] = []
+    #resDict['Groups'] = []
+    resDict['nosupport'] = []
     vomsClaim = self.parameters.get('Syntax/VOMS/claim')
-    vomsVORegex = self.parameters.get('Syntax/VOMS/vo')
-    vomsRoleRegex = self.parameters.get('Syntax/VOMS/role')
-    if not vomsClaim or not vomsVORegex or not vomsRoleRegex and not resDict['UsrOptns']['Groups']:
+    vomsItemRegex = self.parameters.get('Syntax/VOMS/item')
+    # vomsVORegex = self.parameters.get('Syntax/VOMS/vo')
+    # vomsRoleRegex = self.parameters.get('Syntax/VOMS/role')
+    if not vomsClaim or not vomsItemRegex and not resDict['UsrOptns']['Groups']:
       self.log.warn('No "DiracGroups", no claim with VO decsribe in Syntax/VOMS section found.')
     elif not responseD['UserProfile'].get(vomsClaim) and not resDict['UsrOptns']['Groups']:
       self.log.warn('No "DiracGroups", no claim "%s" that decsribe VOs found.' % vomsClaim)
@@ -114,25 +115,36 @@ class OAuth2IdProvider(IdProvider):
       
       # FIXME: need to use re.match() and groupdict()
       # Parse claim info to find DIRAC groups
-      for item in claimVOList:
-        if re.search(vomsVORegex.replace('<VALUE>', '.*'), item):
+      result = Registry.getVOs()
+      if not result['OK']:
+        return result
+      realToDIRACVONames = {}
+      for diracVOName in result['Value']:
+        vomsName = Registry.getVOOption(diracVOName, 'VOMSName')
+        if vomsName:
+          realToDIRACVONames[vomsName] = diracVOName
 
+      __prog = re.compile(vomsItemRegex)
+      for item in claimVOList:
+        result = __prog.match(item)
+        if result:
+          __parse = result.groupdict()
+          # Convert role to DIRAC record type
+          __parse['ROLE'] = "/%s%s" % (__parse['VO'], '/Role=%s' % __parse['ROLE'] if __parse['ROLE'] else '')
           # Parse VO
-          regex = vomsVORegex.split('<VALUE>')
-          vo = re.sub(regex[1], '', re.sub(regex[0], '', item))
-          allvos = Registry.getVOs()
-          if not allvos['OK']:
-            return allvos
-          if vo not in allvos['Value']:
-            resDict['noregvos'].append(vo)
+          # regex = vomsVORegex.split('<VALUE>')
+          # vo = re.sub(regex[1], '', re.sub(regex[0], '', item))
+
+          if __parse['VO'] not in realToDIRACVONames:
+            resDict['nosupport'].append(__parse['ROLE'])
             continue
 
           # Parse Role
-          regex = vomsRoleRegex.split('<VALUE>')
-          role = re.sub(regex[1], '', re.sub(regex[0], '', item))
+          # regex = vomsRoleRegex.split('<VALUE>')
+          # role = re.sub(regex[1], '', re.sub(regex[0], '', item))
           
           # Convert to DIRAC group
-          result = Registry.getVOMSRoleGroupMapping(vo)
+          result = Registry.getVOMSRoleGroupMapping(realToDIRACVONames[__parse['VO']])
           if not result['OK']:
             return result
           noVoms = result['Value']['NoVOMS']
@@ -143,17 +155,19 @@ class OAuth2IdProvider(IdProvider):
             # Set groups with no role
             resDict['UsrOptns']['Groups'].append(group)
           
-          if role not in roleGroup:
+          if __parse['ROLE'] not in roleGroup:
+            resDict['nosupport'].append(__parse['ROLE'])
+            continue
             # Create new group
-            group = vo + '_' + role
-            properties = {'VOMSRole': role, 'VOMSVO': vo, 'VO': vo, 'Properties': 'NormalUser'}
-            resDict['Groups'].append({group: properties})
+            # group = realToDIRACVONames[__parse['VO']] + '_' + __parse['ROLE']
+            # properties = {'VOMSRole': __parse['ROLE'], 'VO': realToDIRACVONames[__parse['VO']], 'Properties': 'NormalUser'}
+            # resDict['Groups'].append({group: properties})
           
-          else:
-            # Set groups with role
-            for group in groupRole:
-              if role == groupRole[group]:
-                resDict['UsrOptns']['Groups'].append(group)
+          #else:
+          # Set groups with role
+          for group in groupRole:
+            if __parse['ROLE'] == groupRole[group]:
+              resDict['UsrOptns']['Groups'].append(group)
 
     return S_OK(resDict)
 
