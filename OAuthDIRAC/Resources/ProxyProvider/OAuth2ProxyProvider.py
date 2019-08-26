@@ -1,6 +1,7 @@
 """ ProxyProvider implementation for the proxy generation using OIDC flow
 """
 
+import pprint
 import datetime
 
 from DIRAC import S_OK, S_ERROR, gLogger
@@ -21,6 +22,7 @@ class OAuth2ProxyProvider(ProxyProvider):
     self.log = gLogger.getSubLogger(__name__)
 
   def setParameters(self, parameters):
+    self.log = gLogger.getSubLogger('%s/%s' % (__name__, parameters['ProviderName']))
     self.parameters = parameters
     self.oauth2 = OAuth2(parameters['IdProvider'])
     self.oauth = OAuthManagerClient()
@@ -72,7 +74,7 @@ class OAuth2ProxyProvider(ProxyProvider):
       result = self.oauth.getSessionDict(__conn, __params)
       if not result['OK']:
         return result
-      self.log.notice('Search access token result: ', result)
+      self.log.notice('Search access token result:\n', pprint.pformat(result['Value']))
 
       # Trying to update every access token
       accessTokens = []
@@ -128,7 +130,7 @@ class OAuth2ProxyProvider(ProxyProvider):
 
     # Get proxy request
     for accessToken in result['Value']['AccessTokens']:
-      self.log.info('Get proxy from %s request with access token:' % self.parameters['ProviderName'], accessToken)
+      self.log.info('Get proxy request with access token:', accessToken)
       result = self.__getProxyRequest(accessToken, voms)
       if result['OK']:
         self.log.info('Proxy is taken')
@@ -143,7 +145,7 @@ class OAuth2ProxyProvider(ProxyProvider):
         state = res['Value'][i]['State']
         res = self.oauth.killState(state)
         if not res['OK']:
-          self.log.error('Cannot kill %s' % state, res['Message'])
+          self.log.error('Cannot kill %s:' % state, res['Message'])
 
     if not result['OK']:
       return result
@@ -248,4 +250,4 @@ class OAuth2ProxyProvider(ProxyProvider):
       r.raise_for_status()
       return S_OK(r.text)
     except self.oauth2.exceptions.RequestException as e:
-      return S_ERROR(e.message)
+      return S_ERROR("%s: %s" % (e.message, r.text))
