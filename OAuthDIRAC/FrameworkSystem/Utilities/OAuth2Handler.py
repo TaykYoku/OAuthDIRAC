@@ -154,7 +154,10 @@ class OAuth2Handler(WebHandler):
           <html><head><title>Authetication</title>
             <meta charset="utf-8" /></head><body>
               {{ Messages }} <br>
-              Done! You can <button onclick="self.close()">close</button> this window.
+              Done! You can close this window.
+              <script type="text/javascript">
+                window.close();
+              </script>
             </body>
           </html>''')
           self.loggin.info(self.args['state'], 'session, authorization complete')
