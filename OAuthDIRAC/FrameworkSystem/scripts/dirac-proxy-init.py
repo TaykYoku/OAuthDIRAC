@@ -503,7 +503,11 @@ class ProxyInit(object):
       gLogger.error(result['Message'])
       sys.exit(1)
     if not result['Value']['Status'] == 'authed':
-      gLogger.notice(result['Value']['Message'])
+      if result['Value']['Status'] == 'authed and reported':
+        gLogger.notice('Authenticated success. Administrators was notified about you.')
+      elif result['Value']['Status'] == 'visitor':
+        gLogger.notice('Authenticated success. You have permissions as Visitor.')
+      gLogger.notice(result['Value']['Comment'])
       sys.exit(1)
 
     if not self.__piParams.proxyLoc:
