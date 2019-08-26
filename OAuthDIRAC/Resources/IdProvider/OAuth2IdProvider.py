@@ -3,6 +3,7 @@
 
 import re
 import urllib
+import pprint
 
 from DIRAC import S_OK, S_ERROR, gLogger
 from DIRAC.Core.Security.X509Chain import X509Chain  # pylint: disable=import-error
@@ -19,9 +20,9 @@ class OAuth2IdProvider(IdProvider):
 
   def __init__(self, parameters=None):
     super(OAuth2IdProvider, self).__init__(parameters)
-    self.log = gLogger.getSubLogger(__name__)
   
   def setParameters(self, parameters):
+    self.log = gLogger.getSubLogger('%s/%s' % (__name__, parameters['ProviderName']))
     self.parameters = parameters
     self.oauth2 = OAuth2(parameters['ProviderName'])
 
@@ -34,7 +35,7 @@ class OAuth2IdProvider(IdProvider):
                  - 'Status' with ready to work status[ready, needToAuth]
                  - 'AccessToken' with list of access token
     """
-    self.log.info("Session dict ===>>", sessionDict)
+    self.log.info("Check status with next session profile:\n", pprint.pformat(sessionDict))
     refreshToken = sessionDict and sessionDict.get('RefreshToken')
     state = sessionDict and sessionDict.get('State')
     if state:
@@ -98,12 +99,9 @@ class OAuth2IdProvider(IdProvider):
     resDict['UsrOptns']['FullName'] = gname and fname and ' '.join([gname, fname]) or name and ' '.join(name) or ''
     
     # Get regex syntax to parse VOs info
-    #resDict['Groups'] = []
     resDict['nosupport'] = []
     vomsClaim = self.parameters.get('Syntax/VOMS/claim')
     vomsItemRegex = self.parameters.get('Syntax/VOMS/item')
-    # vomsVORegex = self.parameters.get('Syntax/VOMS/vo')
-    # vomsRoleRegex = self.parameters.get('Syntax/VOMS/role')
     if not vomsClaim or not vomsItemRegex and not resDict['UsrOptns']['Groups']:
       self.log.warn('No "DiracGroups", no claim with VO decsribe in Syntax/VOMS section found.')
     elif not responseD['UserProfile'].get(vomsClaim) and not resDict['UsrOptns']['Groups']:
@@ -113,7 +111,6 @@ class OAuth2IdProvider(IdProvider):
       if not isinstance(claimVOList, list):
         claimVOList = claimVOList.split(',')
       
-      # FIXME: need to use re.match() and groupdict()
       # Parse claim info to find DIRAC groups
       result = Registry.getVOs()
       if not result['OK']:
@@ -129,20 +126,15 @@ class OAuth2IdProvider(IdProvider):
         result = __prog.match(item)
         if result:
           __parse = result.groupdict()
+          
           # Convert role to DIRAC record type
           __parse['ROLE'] = "/%s%s" % (__parse['VO'], '/Role=%s' % __parse['ROLE'] if __parse['ROLE'] else '')
+          
           # Parse VO
-          # regex = vomsVORegex.split('<VALUE>')
-          # vo = re.sub(regex[1], '', re.sub(regex[0], '', item))
-
           if __parse['VO'] not in realToDIRACVONames:
             resDict['nosupport'].append(__parse['ROLE'])
             continue
 
-          # Parse Role
-          # regex = vomsRoleRegex.split('<VALUE>')
-          # role = re.sub(regex[1], '', re.sub(regex[0], '', item))
-          
           # Convert to DIRAC group
           result = Registry.getVOMSRoleGroupMapping(realToDIRACVONames[__parse['VO']])
           if not result['OK']:
@@ -158,12 +150,7 @@ class OAuth2IdProvider(IdProvider):
           if __parse['ROLE'] not in roleGroup:
             resDict['nosupport'].append(__parse['ROLE'])
             continue
-            # Create new group
-            # group = realToDIRACVONames[__parse['VO']] + '_' + __parse['ROLE']
-            # properties = {'VOMSRole': __parse['ROLE'], 'VO': realToDIRACVONames[__parse['VO']], 'Properties': 'NormalUser'}
-            # resDict['Groups'].append({group: properties})
-          
-          #else:
+
           # Set groups with role
           for group in groupRole:
             if __parse['ROLE'] == groupRole[group]:
@@ -178,8 +165,10 @@ class OAuth2IdProvider(IdProvider):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    stateAuth = kwargs.get('stateAuth') or ''
     __credDict = {}
+    stateAuth = kwargs.get('stateAuth')
+    if not stateAuth:
+      return S_ERROR('No session number found.')
     result = OAuthManagerClient().getUsrnameForState(stateAuth)
     if not result['OK']:
       return result
