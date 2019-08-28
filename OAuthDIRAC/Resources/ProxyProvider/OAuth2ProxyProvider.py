@@ -31,7 +31,7 @@ class OAuth2ProxyProvider(ProxyProvider):
     """ Read ready to work status of proxy provider
 
         :param dict userDict: user description dictionary with possible fields:
-               FullName, UserName, DN, EMail, DiracGroup
+               FullName, UserName, DN, Email, DiracGroup
         :param dict sessionDict: session dictionary
 
         :return: S_OK(dict)/S_ERROR() -- dictionary contain fields:
@@ -70,11 +70,11 @@ class OAuth2ProxyProvider(ProxyProvider):
           return S_ERROR('No accses token token, session number, user DN found in request.')
 
       # Search access tokens
-      self.log.notice('Search access token for proxy request')
+      self.log.verbose('Search active sessions..')
       result = self.oauth.getSessionDict(__conn, __params)
       if not result['OK']:
         return result
-      self.log.notice('Search access token result:\n', pprint.pformat(result['Value']))
+      self.log.debug('Found next sessions:\n', pprint.pformat(result['Value']))
 
       # Trying to update every access token
       accessTokens = []
@@ -82,13 +82,13 @@ class OAuth2ProxyProvider(ProxyProvider):
         sessionDict = result['Value'][i]
         if not sessionDict.get('AccessToken'):
           continue
-        self.log.notice('Try %s access token.' % sessionDict['AccessToken'])
+        self.log.verbose('Try to use %s access token.' % sessionDict['AccessToken'])
 
         # Check access token time left
         timeLeft = 0
         if isinstance(sessionDict['ExpiresIn'], datetime.datetime):
           timeLeft = (sessionDict['ExpiresIn'] - sessionDict['TimeStamp']).total_seconds()
-        self.log.notice('Left %s seconds of access token' % str(timeLeft))
+        self.log.verbose('Left %s seconds of access token' % str(timeLeft))
 
         if timeLeft < 1800:
           # Refresh tokens
@@ -96,7 +96,7 @@ class OAuth2ProxyProvider(ProxyProvider):
           if not result['OK']:
             self.log.error(result['Message'])
             continue
-          self.log.notice('Tokens of %s successfully updated.' % sessionDict['Provider'])
+          self.log.verbose('Tokens of %s successfully updated.' % sessionDict['Provider'])
           tD = result['Value']
           exp_datetime = 'ADDDATE(UTC_TIMESTAMP(), INTERVAL %s SECOND)' % tD.get('expires_in') or 0
           result = self.oauth.updateSession({'ExpiresIn': exp_datetime,
@@ -116,7 +116,7 @@ class OAuth2ProxyProvider(ProxyProvider):
     """ Generate user proxy with OIDC flow authentication
 
         :param dict userDict: user description dictionary with possible fields:
-               FullName, UserName, DN, EMail, DiracGroup
+               FullName, UserName, DN, Email, DiracGroup
         :param dict sessionDict: session dictionary
 
         :return: S_OK/S_ERROR, Value is a proxy string
@@ -130,7 +130,7 @@ class OAuth2ProxyProvider(ProxyProvider):
 
     # Get proxy request
     for accessToken in result['Value']['AccessTokens']:
-      self.log.info('Get proxy request with access token:', accessToken)
+      self.log.verbose('For proxy request use access token:', accessToken)
       result = self.__getProxyRequest(accessToken, voms)
       if result['OK']:
         self.log.info('Proxy is taken')
@@ -140,7 +140,6 @@ class OAuth2ProxyProvider(ProxyProvider):
       res = self.oauth.getSessionDict('', {'AccessToken': accessToken, 'Provider': self.parameters['IdProvider']})
       if not res['OK']:
         return res
-      # self.log.info('======>>>>:', res['Value'])
       for i in range(0, len(res['Value'])):
         state = res['Value'][i]['State']
         res = self.oauth.killState(state)
@@ -168,7 +167,7 @@ class OAuth2ProxyProvider(ProxyProvider):
     """ Get DN of the user certificate that will be created
 
         :param dict userDict: user description dictionary with possible fields:
-               FullName, UserName, DN, EMail, DiracGroup
+               FullName, UserName, DN, Email, DiracGroup
         :param dict sessionDict: session dictionary
 
         :return: S_OK/S_ERROR, Value is the DN string
@@ -233,7 +232,7 @@ class OAuth2ProxyProvider(ProxyProvider):
       result = Registry.getVOMSServerInfo(voms)
       if not result['OK']:
         return result
-      self.log.info('"%s" VOMS found' % voms)
+      self.log.verbose('"%s" VOMS found' % voms)
       vomsname = result['Value'][voms]['VOMSName']
       hostname = result['Value'][voms]['Servers'][0]
       hostDN = result['Value'][voms]['Servers'][hostname]['DN']
@@ -242,7 +241,7 @@ class OAuth2ProxyProvider(ProxyProvider):
       kwargs['voname'] = vomsname
     
     # Get proxy request
-    self.log.notice('Get proxy request to %s' % self.parameters['GetProxyEndpoint'])
+    self.log.verbose('Send proxy request to %s' % self.parameters['GetProxyEndpoint'])
     kwargs['client_id'] = self.oauth2.get('client_id')
     kwargs['client_secret'] = self.oauth2.get('client_secret')
     try:
