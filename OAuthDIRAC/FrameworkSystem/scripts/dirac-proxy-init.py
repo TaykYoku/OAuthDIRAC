@@ -364,7 +364,7 @@ class ProxyInit(object):
     result = res['Value']
 
     # Create authorization link
-    state = result['Value'].get('state')
+    state = result['Value'].get('Session')
     if not state:
       gLogger.fatal('Cannot get link for authentication.')
       sys.exit(1)
@@ -409,7 +409,11 @@ class ProxyInit(object):
       gLogger.error(result['Message'])
       sys.exit(1)
     if not result['Value']['Status'] == 'authed':
-      gLogger.notice(result['Value']['Message'])
+      if result['Value']['Status'] == 'authed and reported':
+        gLogger.notice('Authenticated success. Administrators was notified about you.')
+      elif result['Value']['Status'] == 'visitor':
+        gLogger.notice('Authenticated success. You have permissions as Visitor.')
+      gLogger.notice(result['Value']['Comment'])
       sys.exit(1)
 
     if not self.__piParams.proxyLoc:
@@ -417,9 +421,6 @@ class ProxyInit(object):
     try:
       with open(self.__piParams.proxyLoc, 'w') as fd:
         fd.write(result['Value']['proxy'].encode("UTF-8"))
-    except Exception as e:
-      return S_ERROR("%s :%s" % (self.__piParams.proxyLoc, repr(e).replace(',)', ')')))
-    try:
       os.chmod(self.__piParams.proxyLoc, stat.S_IRUSR | stat.S_IWUSR)
     except Exception as e:
       return S_ERROR("%s :%s" % (self.__piParams.proxyLoc, repr(e).replace(',)', ')')))

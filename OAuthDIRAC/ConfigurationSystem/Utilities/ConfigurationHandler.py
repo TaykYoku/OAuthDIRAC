@@ -9,6 +9,7 @@ from tornado import web, gen
 from tornado.template import Template
 
 from DIRAC import S_OK, S_ERROR, gConfig, gLogger
+from DIRAC.ConfigurationSystem.Client.ConfigurationData import gConfigurationData
 
 from WebAppDIRAC.Lib.WebHandler import WebHandler, asyncGen
 
@@ -20,6 +21,17 @@ class ConfigurationHandler(WebHandler):
   AUTH_PROPS = "all"
   LOCATION = "configuration"
 
+  def initialize(self):
+    super(ConfigurationHandler, self).initialize()
+    self.loggin = gLogger.getSubLogger(__name__)
+    self.args = {}
+    for arg in self.request.arguments:
+      if len(self.request.arguments[arg]) > 1:
+        self.args[arg] = self.request.arguments[arg]
+      else:
+        self.args[arg] = self.request.arguments[arg][0] or ''
+    return S_OK()
+
   @asyncGen
   def web_get(self):
     """ Authentication endpoint, used to:
@@ -28,31 +40,35 @@ class ConfigurationHandler(WebHandler):
            options - section path where need to get list of opinions
            section - section path to get dict of all opinions, values there
            sections - section path where need to get list of sections
+           version - client version
         
         :return: json with requested data
     """
-    args = self.request.arguments
-    key = args.keys()[0]
-    path = args.values()[0][0]
-    gLogger.notice('Request configuration information')
+    self.loggin.notice('Request configuration information')
 
-    if key == 'option':
-      result = yield self.threadTask(gConfig.getOption, path)
+    if 'version' in self.args and (self.args.get('version') or '0') >= gConfigurationData.getVersion():
+      self.finish()
+    
+    if 'fullCFG' in self.args:
+      remoteCFG = yield self.threadTask(gConfigurationData.getRemoteCFG)
+      self.finish(str(remoteCFG))
+    elif 'option' in self.args:
+      result = yield self.threadTask(gConfig.getOption, self.args['option'])
       if not result['OK']:
         raise tornado.web.HTTPError(404, result['Message'])
       self.finish(json.dumps(result['Value']))
-    elif key == 'section':
-      result = yield self.threadTask(gConfig.getOptionsDict, path)
+    elif 'section' in self.args:
+      result = yield self.threadTask(gConfig.getOptionsDict, self.args['section'])
       if not result['OK']:
         raise tornado.web.HTTPError(404, result['Message'])
       self.finish(json.dumps(result['Value']))
-    elif key == 'options':
-      result = yield self.threadTask(gConfig.getOptions, path)
+    elif 'options' in self.args:
+      result = yield self.threadTask(gConfig.getOptions, self.args['options'])
       if not result['OK']:
         raise tornado.web.HTTPError(404, result['Message'])
       self.finish(json.dumps(result['Value']))
-    elif key == 'sections':
-      result = yield self.threadTask(gConfig.getSections, path)
+    elif 'sections' in self.args:
+      result = yield self.threadTask(gConfig.getSections, self.args['sections'])
       if not result['OK']:
         raise tornado.web.HTTPError(404, result['Message'])
       self.finish(json.dumps(result['Value']))

@@ -6,6 +6,8 @@
 import re
 import random
 import string
+import pprint
+
 from requests import Session, exceptions
 
 from DIRAC import gLogger, S_OK, S_ERROR
@@ -31,15 +33,16 @@ class OAuth2(Session):
     """ OIDCClient constructor
     """
     super(OAuth2, self).__init__()
-    self.log = gLogger.getSubLogger('OAuth2')
     self.exceptions = exceptions
     self.verify=False
 
     __optns = {}
     self.parameters = {}
     self.parameters['name'] = name or kwargs.get('ProviderName')
+    self.log = gLogger.getSubLogger("OAuth2/%s" % self.parameters['name'])
 
     # Get information from CS
+    result = S_OK()
     for instance in (providerOfWhat and [providerOfWhat] or getInfoAboutProviders().get('Value') or []):
       result = getInfoAboutProviders(of=instance, providerName=self.parameters['name'])
       if result['OK']:
@@ -54,9 +57,10 @@ class OAuth2(Session):
     if self.parameters['issuer']:
       result = self.getWellKnownDict()
       if not result['OK']:
-        self.log.warn('Cannot get settins from %s provider:' % result['Message'])
+        self.log.warn('Cannot get settings remotely:' % result['Message'])
       elif isinstance(result['Value'], dict):
         __optns = result['Value']
+      #self.log.info('Loaded remote settings:\n', __optns)
 
     for d in [__csDict, kwargs]:
       for key, value in d.iteritems():
@@ -91,6 +95,7 @@ class OAuth2(Session):
     self.parameters['registration_endpoint'] = registration_endpoint or __optns.get('registration_endpoint')
     self.parameters['authorization_endpoint'] = authorization_endpoint or __optns.get('authorization_endpoint')
     self.parameters['introspection_endpoint'] = introspection_endpoint or __optns.get('introspection_endpoint')
+    #self.log.info('Initialize:\n', pprint.pformat(self.parameters))
 
   def get(self, parameter):
     return self.parameters.get(parameter)
@@ -132,6 +137,7 @@ class OAuth2(Session):
     result = self.fetchToken(code)
     if not result['OK']:
       return result
+    self.log.info('RESPONSE:\n', pprint.pformat(result['Value']))
     oaDict['Tokens'] = result['Value']
 
     # Get user profile
@@ -139,6 +145,14 @@ class OAuth2(Session):
     if not result['OK']:
       return result
     oaDict['UserProfile'] = result['Value']
+
+    # Get tokens
+    result = self.fetchToken(refreshToken=oaDict['Tokens']['refresh_token'])
+    if not result['OK']:
+      return result
+    oaDict['Tokens'] = result['Value']
+    self.log.info('RESPONSE:\n', pprint.pformat(result['Value']))
+
     return S_OK(oaDict)
 
   def getUserProfile(self, accessToken):
@@ -156,7 +170,7 @@ class OAuth2(Session):
       r.raise_for_status()
       return S_OK(r.json())
     except (self.exceptions.RequestException, ValueError) as e:
-      return S_ERROR(e.message)
+      return S_ERROR("%s: %s" % (e.message, r.text))
 
   def revokeToken(self, accessToken=None, refreshToken=None):
     """ Revoke token
@@ -169,7 +183,7 @@ class OAuth2(Session):
     if not accessToken and not refreshToken:
       return S_ERROR('Not found any token to revocation.')
     if not self.parameters['revocation_endpoint']:
-      return S_ERROR('Not found revocation endpoint.')
+      return S_ERROR('Not found revocation endpoint for %s provider' % self.parameters['name'])
     for key, value in [('access_token', accessToken), ('refresh_token', refreshToken)]:
       if not value:
         continue
@@ -177,7 +191,7 @@ class OAuth2(Session):
       try:
         self.request('POST', self.parameters['token_endpoint']).raise_for_status()
       except self.exceptions.RequestException as e:
-        return S_ERROR(e.message)
+        return S_ERROR("%s: %s" % (e.message, r.text))
 
   def fetchToken(self, code=None, refreshToken=None):
     """ Update tokens
@@ -208,7 +222,7 @@ class OAuth2(Session):
       r.raise_for_status()
       return S_OK(r.json())
     except (self.exceptions.RequestException, ValueError) as e:
-      return S_ERROR(e.message)
+      return S_ERROR("%s: %s" % (e.message, r.text))
 
   def createState(self):
     """ Generates a state string to be used in authorizations
@@ -228,10 +242,10 @@ class OAuth2(Session):
     """
     url = url or self.parameters['issuer'] and '%s/.well-known/openid-configuration' % self.parameters['issuer']
     if not url:
-      return S_ERROR('Cannot get %s provider issuer/wellKnow url' % oauthProvider)
+      return S_ERROR('Cannot get %s provider issuer/wellKnow url' % self.parameters['name'])
     try:
       r = self.request('GET', url)
       r.raise_for_status()
       return S_OK(r.json())
     except (self.exceptions.RequestException, ValueError) as e:
-      return S_ERROR(e.message)
+      return S_ERROR("%s: %s" % (e.message, r.text))

@@ -156,8 +156,8 @@ class OAuthManagerHandler(RequestHandler):
       gLogger.notice('%s session' % state, status)
       if status in ['prepared', 'in progress']:
         continue
-      elif status == 'visitor':
-        return S_OK({'Status': status, 'Message': resD['Comment']})
+      elif status in ['visitor', 'authed and reported']:
+        return S_OK(resD)
       elif status == 'failed':
         return S_ERROR(resD['Comment'])
       elif status == 'authed':

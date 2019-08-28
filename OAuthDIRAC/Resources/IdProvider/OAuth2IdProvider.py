@@ -3,6 +3,7 @@
 
 import re
 import urllib
+import pprint
 
 from DIRAC import S_OK, S_ERROR, gLogger
 from DIRAC.Core.Security.X509Chain import X509Chain  # pylint: disable=import-error
@@ -19,9 +20,9 @@ class OAuth2IdProvider(IdProvider):
 
   def __init__(self, parameters=None):
     super(OAuth2IdProvider, self).__init__(parameters)
-    self.log = gLogger.getSubLogger(__name__)
   
   def setParameters(self, parameters):
+    self.log = gLogger.getSubLogger('%s/%s' % (__name__, parameters['ProviderName']))
     self.parameters = parameters
     self.oauth2 = OAuth2(parameters['ProviderName'])
 
@@ -34,6 +35,7 @@ class OAuth2IdProvider(IdProvider):
                  - 'Status' with ready to work status[ready, needToAuth]
                  - 'AccessToken' with list of access token
     """
+    self.log.debug("Check status with next session profile:\n", pprint.pformat(sessionDict))
     refreshToken = sessionDict and sessionDict.get('RefreshToken')
     state = sessionDict and sessionDict.get('State')
     if state:
@@ -53,7 +55,7 @@ class OAuth2IdProvider(IdProvider):
   def parseAuthResponse(self, response):
     """ Make user info dict:
           - username(preferd user name)
-          - noregvos(VOs in response that not in DIRAC)
+          - nosupport(VOs in response that not in DIRAC)
           - UsrOptns(User profile that convert to DIRAC user options)
           - Tokens(Contain refreshed tokens, type and etc.)
           - Groups(New DIRAC groups that need created)
@@ -90,45 +92,51 @@ class OAuth2IdProvider(IdProvider):
     resDict['UsrOptns']['ID'] = responseD['UserProfile'].get('sub')
     if not resDict['UsrOptns']['ID']:
       return S_ERROR('No ID of user found.')
-    resDict['UsrOptns']['EMail'] = responseD['UserProfile'].get('email')
+    resDict['UsrOptns']['Email'] = responseD['UserProfile'].get('email')
     resDict['UsrOptns']['Groups'] = self.parameters.get('DiracGroups') or []
     if not isinstance(resDict['UsrOptns']['Groups'], list):
       resDict['UsrOptns']['Groups'] = resDict['UsrOptns']['Groups'].replace(' ','').split(',')
     resDict['UsrOptns']['FullName'] = gname and fname and ' '.join([gname, fname]) or name and ' '.join(name) or ''
     
     # Get regex syntax to parse VOs info
-    resDict['Groups'] = []
-    resDict['noregvos'] = []
+    resDict['nosupport'] = []
     vomsClaim = self.parameters.get('Syntax/VOMS/claim')
-    vomsVORegex = self.parameters.get('Syntax/VOMS/vo')
-    vomsRoleRegex = self.parameters.get('Syntax/VOMS/role')
-    if not vomsClaim or not vomsVORegex or not vomsRoleRegex and not resDict['UsrOptns']['Groups']:
+    vomsItemRegex = self.parameters.get('Syntax/VOMS/item')
+    if not vomsClaim or not vomsItemRegex and not resDict['UsrOptns']['Groups']:
       self.log.warn('No "DiracGroups", no claim with VO decsribe in Syntax/VOMS section found.')
+    elif not responseD['UserProfile'].get(vomsClaim) and not resDict['UsrOptns']['Groups']:
+      self.log.warn('No "DiracGroups", no claim "%s" that decsribe VOs found.' % vomsClaim)
     else:
       claimVOList = responseD['UserProfile'][vomsClaim]
       if not isinstance(claimVOList, list):
         claimVOList = claimVOList.split(',')
       
       # Parse claim info to find DIRAC groups
-      for item in claimVOList:
-        if re.search(vomsVORegex.replace('<VALUE>', '.*'), item):
+      result = Registry.getVOs()
+      if not result['OK']:
+        return result
+      realToDIRACVONames = {}
+      for diracVOName in result['Value']:
+        vomsName = Registry.getVOOption(diracVOName, 'VOMSName')
+        if vomsName:
+          realToDIRACVONames[vomsName] = diracVOName
 
+      __prog = re.compile(vomsItemRegex)
+      for item in claimVOList:
+        result = __prog.match(item)
+        if result:
+          __parse = result.groupdict()
+          
+          # Convert role to DIRAC record type
+          __parse['ROLE'] = "/%s%s" % (__parse['VO'], '/Role=%s' % __parse['ROLE'] if __parse['ROLE'] else '')
+          
           # Parse VO
-          regex = vomsVORegex.split('<VALUE>')
-          vo = re.sub(regex[1], '', re.sub(regex[0], '', item))
-          allvos = Registry.getVOs()
-          if not allvos['OK']:
-            return allvos
-          if vo not in allvos['Value']:
-            resDict['noregvos'].append(vo)
+          if __parse['VO'] not in realToDIRACVONames:
+            resDict['nosupport'].append(__parse['ROLE'])
             continue
 
-          # Parse Role
-          regex = vomsRoleRegex.split('<VALUE>')
-          role = re.sub(regex[1], '', re.sub(regex[0], '', item))
-          
           # Convert to DIRAC group
-          result = Registry.getVOMSRoleGroupMapping(vo)
+          result = Registry.getVOMSRoleGroupMapping(realToDIRACVONames[__parse['VO']])
           if not result['OK']:
             return result
           noVoms = result['Value']['NoVOMS']
@@ -139,17 +147,14 @@ class OAuth2IdProvider(IdProvider):
             # Set groups with no role
             resDict['UsrOptns']['Groups'].append(group)
           
-          if role not in roleGroup:
-            # Create new group
-            group = vo + '_' + role
-            properties = {'VOMSRole': role, 'VOMSVO': vo, 'VO': vo, 'Properties': 'NormalUser'}
-            resDict['Groups'].append({group: properties})
-          
-          else:
-            # Set groups with role
-            for group in groupRole:
-              if role == groupRole[group]:
-                resDict['UsrOptns']['Groups'].append(group)
+          if __parse['ROLE'] not in roleGroup:
+            resDict['nosupport'].append(__parse['ROLE'])
+            continue
+
+          # Set groups with role
+          for group in groupRole:
+            if __parse['ROLE'] == groupRole[group]:
+              resDict['UsrOptns']['Groups'].append(group)
 
     return S_OK(resDict)
 
@@ -160,8 +165,10 @@ class OAuth2IdProvider(IdProvider):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    stateAuth = kwargs.get('stateAuth') or ''
     __credDict = {}
+    stateAuth = kwargs.get('stateAuth')
+    if not stateAuth:
+      return S_ERROR('No session number found.')
     result = OAuthManagerClient().getUsrnameForState(stateAuth)
     if not result['OK']:
       return result

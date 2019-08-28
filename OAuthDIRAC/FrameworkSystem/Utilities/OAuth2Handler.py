@@ -78,7 +78,7 @@ class OAuth2Handler(WebHandler):
       if result['Value']['Status'] == 'ready':
         pass
       elif result['Value']['Status'] == 'needToAuth':
-        state = result['Value']['state']
+        state = result['Value']['Session']
         oauthAPI = getOAuthAPI('Production')
         if not oauthAPI:
           raise tornado.web.HTTPError(500, 'Cannot find redirect URL.')
@@ -139,15 +139,15 @@ class OAuth2Handler(WebHandler):
     elif not self.args.get('state'):
       self.finish('"state" argument is empty.')
     else:
-      self.loggin.notice(self.args['state'], 'session, parsing authorization response %s' % self.args)
+      self.loggin.info(self.args['state'], 'session, parsing authorization response %s' % self.args)
       result = yield self.threadTask(gOAuthCli.parseAuthResponse, self.args, self.args['state'])
       if not result['OK']:
         self.loggin.error(result['Message'])
         raise tornado.web.HTTPError(500, result['Message'])
       else:
         oDict = result['Value']
-        if oDict['redirect']:
-          self.loggin.notice(self.args['state'], 'session, redirect to new authorization flow "%s"' % oDict['redirect'])
+        if oDict.get('redirect'):
+          self.loggin.info(self.args['state'], 'session, redirect to new authorization flow "%s"' % oDict['redirect'])
           self.redirect(oDict['redirect'])
         else:
           t = Template('''<!DOCTYPE html>
@@ -161,7 +161,8 @@ class OAuth2Handler(WebHandler):
             </body>
           </html>''')
           self.loggin.info(self.args['state'], 'session, authorization complete')
-          self.finish(t.generate(Messages='\n'.join(oDict['Messages'])))
+          self.loggin.info(oDict['Messages'])
+          self.finish(t.generate(Messages=oDict['Messages']))
 
   def __convertHashToArgs(self):
     """ Convert hash to request arguments
