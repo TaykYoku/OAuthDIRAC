@@ -35,7 +35,7 @@ class OAuth2IdProvider(IdProvider):
                  - 'Status' with ready to work status[ready, needToAuth]
                  - 'AccessToken' with list of access token
     """
-    self.log.info("Check status with next session profile:\n", pprint.pformat(sessionDict))
+    self.log.debug("Check status with next session profile:\n", pprint.pformat(sessionDict))
     refreshToken = sessionDict and sessionDict.get('RefreshToken')
     state = sessionDict and sessionDict.get('State')
     if state:
@@ -92,7 +92,7 @@ class OAuth2IdProvider(IdProvider):
     resDict['UsrOptns']['ID'] = responseD['UserProfile'].get('sub')
     if not resDict['UsrOptns']['ID']:
       return S_ERROR('No ID of user found.')
-    resDict['UsrOptns']['EMail'] = responseD['UserProfile'].get('email')
+    resDict['UsrOptns']['Email'] = responseD['UserProfile'].get('email')
     resDict['UsrOptns']['Groups'] = self.parameters.get('DiracGroups') or []
     if not isinstance(resDict['UsrOptns']['Groups'], list):
       resDict['UsrOptns']['Groups'] = resDict['UsrOptns']['Groups'].replace(' ','').split(',')
