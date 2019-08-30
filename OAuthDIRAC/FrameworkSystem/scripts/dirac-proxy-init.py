@@ -256,9 +256,7 @@ class ProxyInit(object):
     import webbrowser
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    #from halo import Halo
 
-    #@Halo(spinner='dots')
     def restRequest(url=None, endpoint='', metod='GET', **kwargs):
       """ Method to do http requests """
       if not url or not kwargs:
@@ -270,7 +268,6 @@ class ProxyInit(object):
             __opts = '%s=%s' % (key, kwargs[key])
           else:
             __opts += '&%s=%s' % (key, kwargs[key])
-      #self.spinner.fail()
       try:
         r = requests.get('%s%s?%s' % (url, endpoint, __opts), verify=False)
         r.raise_for_status()
