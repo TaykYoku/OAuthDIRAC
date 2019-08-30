@@ -19,7 +19,7 @@ class IdProviderFactory(object):
   def __init__(self):
     """ Standard constructor
     """
-    self.log = gLogger.getSubLogger(__name__)
+    self.log = gLogger.getSubLogger('IdProviderFactory')
 
   #############################################################################
   def getIdProvider(self, idProvider):
