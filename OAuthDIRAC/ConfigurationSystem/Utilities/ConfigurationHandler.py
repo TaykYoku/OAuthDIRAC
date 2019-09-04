@@ -17,19 +17,13 @@ __RCSID__ = "$Id$"
 
 
 class ConfigurationHandler(WebHandler):
-  OFF = False
   AUTH_PROPS = "all"
   LOCATION = "configuration"
 
   def initialize(self):
+    self.args = self.getArgs()
     super(ConfigurationHandler, self).initialize()
     self.loggin = gLogger.getSubLogger(__name__)
-    self.args = {}
-    for arg in self.request.arguments:
-      if len(self.request.arguments[arg]) > 1:
-        self.args[arg] = self.request.arguments[arg]
-      else:
-        self.args[arg] = self.request.arguments[arg][0] or ''
     return S_OK()
 
   @asyncGen
