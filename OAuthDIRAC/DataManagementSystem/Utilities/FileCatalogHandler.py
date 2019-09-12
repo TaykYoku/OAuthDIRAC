@@ -17,11 +17,9 @@ __RCSID__ = "$Id$"
 class FileCatalogHandler(WebHandler):
 
   AUTH_PROPS = "authenticated"
-  LOCATION = "filecatalogue"
+  LOCATION = "data"
 
   def initialize(self):
-    self.args = self.getArgs()
-    self.did, self.obj = re.match("(?:/([a-zA-Z0-9=-_]+)(?:/([a-z]+))?)?", self.overpath)
     super(FileCatalogHandler, self).initialize()
     self.loggin = gLogger.getSubLogger(__name__)
     self.__rpc = RPCClient("DataManagement/FileCatalog")
@@ -31,8 +29,12 @@ class FileCatalogHandler(WebHandler):
   def web_directory(self):
     """ Retrieve contents of the specified directory
     """
-    if not self.obj:
-      path = self.__decodePath(self.did)
+    optns = self.overpath.strip('/').split('/')
+    if len(optns) > 2:
+      raise WErr(404, "Wrone way")
+    path = self.__decodePath()
+    __obj = re.match("([a-z]+)?", optns[1]).group() if len(optns) > 1 else None
+    if not __obj:
       try:
         pageSize = max(0, int(self.request.arguments['page_size'][-1]))
       except (ValueError, KeyError):
@@ -55,17 +57,15 @@ class FileCatalogHandler(WebHandler):
         for sp in contents[kind]:
           ch[kind][sp[len(path) + 1:]] = contents[kind][sp]
       self.finish(self.__sanitizeForJSON(ch))
-    elif 'metadata' == self.obj:
+    elif 'metadata' == __obj:
       # Search compatible metadata for this directory
-      path = self.__decodePath(self.did)
       cond = self.__decodeMetadataQuery()
       result = yield self.threadTask(self.rpc.getCompatibleMetadata, cond, path)
       if not result["OK"]:
         raise WErr.fromError(result)
       self.finish(self.__sanitizeForJSON(result['Value']))
-    elif 'search' == self.obj:
+    elif 'search' == __obj:
       # Search directories with metadata restrictions
-      path = self.__decodePath(self.did)
       cond = self.__decodeMetadataQuery()
       result = yield self.threadTask(self.rpc.findDirectoriesByMetadata, cond, path)
       if not result['OK']:
@@ -86,6 +86,8 @@ class FileCatalogHandler(WebHandler):
         
         :return: json with requested data
     """
+    if self.overpath:
+      raise WErr(404, "Wrone way")
     cond = self.__decodeMetadataQuery()
     result = yield self.threadTask(self.__rpc.getMetadataFields)
     if not result['OK']:
@@ -109,14 +111,17 @@ class FileCatalogHandler(WebHandler):
   def web_file(self):
     """ Get the file information
     """
-    if self.obj == "attributes":
-      path = self.__decodePath(self.did)
+    optns = self.overpath.strip('/').split('/')
+    if len(optns) > 2:
+      raise WErr(404, "Wrone way")
+    path = self.__decodePath()
+    __obj = re.match("([a-z]+)?", optns[1]).group() if len(optns) > 1 else None
+    if __obj == "attributes":
       result = yield self.threadTask(self.rpc.getFileMetadata, path)
       if not result['OK'] or path not in result['Value']['Successful']:
         raise WErr.fromError(result)
       self.finish(self.__sanitizeForJSON(result['Value']['Successful'][path]))
-    elif self.obj == "metadata":
-      path = self.decodePath(self.did)
+    elif __obj == "metadata":
       result = yield self.threadTask(self.rpc.getFileUserMetadata, path)
       if not result['OK']:
         raise WErr.fromError(result)
@@ -131,10 +136,11 @@ class FileCatalogHandler(WebHandler):
 
         :return: basestring
     """
-    if not self.did:
+    did = re.match("([A-z0-9=-_]+)?", self.overpath.strip('/').split('/')[0]).group()
+    if not did:
       return "/"
     try:
-      return base64.urlsafe_b64decode(str(self.did)).rstrip("/") or "/"
+      return base64.urlsafe_b64decode(str(did)).rstrip("/") or "/"
     except TypeError, e:
       raise WErr(400, "Cannot decode path")
 
@@ -144,8 +150,8 @@ class FileCatalogHandler(WebHandler):
         :return: dict
     """
     cond = {}
-    for k in self.args:
-      for val in self.args[k]:
+    for k in self.request.arguments:
+      for val in self.request.arguments[k]:
         if val.find("|") == -1:
           continue
         val = val.split("|")
