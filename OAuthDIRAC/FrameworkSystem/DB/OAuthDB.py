@@ -85,7 +85,7 @@ class OAuthDB(DB):
     self.log.info('Found %s old sessions' % len(sessions))
     for i in range(0, len(sessions)):
       if sessions[i].get('State'):
-        result = self.killSession(state=sessions[i]['State'])
+        result = self.killSession(sessions[i]['State'])
         if not result['OK']:
           self.log.error(result['Message'])
     return S_OK(len(sessions))
@@ -96,7 +96,7 @@ class OAuthDB(DB):
         :param basestring providerName: provider name
         :param basestring session: here is able to set session id(optional)
 
-        :return: S_OK(dict)/S_ERROR()
+        :return: S_OK(dict)/S_ERROR() -- dictionary contain Status, Session, etc.
     """
     self.log.info('Get authorization for %s.' % providerName, 'Session: %s' % session if session else '')
     result = IdProviderFactory().getIdProvider(providerName)
@@ -128,16 +128,8 @@ class OAuthDB(DB):
 
     if statusDict['Status'] == 'ready':
       self.log.verbose(providerName, 'is ready to work.')
-      # Session actuality, lets use it
-      # Convert to seconds and save resfreshing tokens existing session
-      result = self._query("SELECT ADDDATE(UTC_TIMESTAMP(), INTERVAL %s SECOND)" % statusDict['Tokens']['ExpiresIn'])
-      if not result['OK']:
-        return result
-      expInSec = result.get('Value') and result['Value'][0] or 0
-      result = self.updateSession({'TokenType': statusDict['Tokens']['TokenType'],
-                                   'AccessToken': statusDict['Tokens']['AccessToken'],
-                                   'RefreshToken': statusDict['Tokens']['RefreshToken'],
-                                   'ExpiresIn': expInSec}, state=statusDict['Session'])
+      # Session actuality, lets use it and save resfreshing tokens existing session
+      result = self.updateSession(statusDict['Tokens'], state=statusDict['Session'])
       if not result['OK']:
         return result
       self.log.notice(statusDict['Session'], 'session of %s updated' % providerName)
@@ -150,7 +142,6 @@ class OAuthDB(DB):
         return S_ERROR('No authentication URL or status created.')
 
       # Create new session
-
       result = self.insertFields('Sessions', ['State', 'Provider', 'Comment', 'LastAccess'],
                                              [statusDict['Session'], providerName, statusDict['URL'],
                                               'UTC_TIMESTAMP()'])
@@ -215,9 +206,9 @@ class OAuthDB(DB):
           result = self.__modifyUser(__parseDict, session, __idProvider, __sourceIdP)
     
     if not result['OK']:
+      self.log.error(session, 'session error: %s' % result['Message'])
       for __session in list(set([session, session.replace('_redirect', '')])):
         self.updateSession({'Status': 'failed', 'Comment': result['Message']}, state=__session)
-      self.log.error(session, 'session error: %s' % result['Message'])
       return result
     __mail = result['Value'].get('EMailObj')
     __status = result['Value']['Status']
@@ -269,18 +260,12 @@ class OAuthDB(DB):
       return S_ERROR('No refresh token')
 
     # Convert to date and save tokens
-    expInSecs = parseDict['Tokens']['ExpiresIn']
-    result = self._query("SELECT ADDDATE(UTC_TIMESTAMP(), INTERVAL %s SECOND)" % expInSecs)
-    if not result['OK']:
-      return result
-    expAsDate = result['Value'] and result['Value'][0] or 'UTC_TIMESTAMP()'
-    self.log.verbose(state, 'session, convert access token live time %s seconds to date.' % expInSecs)
     __sessionDict = parseDict['Tokens'].copy()
     __sessionDict['ID'] = parseDict['UsrOptns']['ID']
     __sessionDict['State'] = state
-    result = self.updateSession({'Sub': __sessionDict['ID'], 'ExpiresIn': expAsDate, 'TokenType': __sessionDict['TokenType'],
-                                 'AccessToken': __sessionDict['AccessToken'], 'RefreshToken': __sessionDict['RefreshToken']},
-                                state=state)
+    result = self.updateSession({'Sub': __sessionDict['ID'], 'ExpiresIn': parseDict['Tokens']['ExpiresIn'], 
+                                 'TokenType': __sessionDict['TokenType'], 'AccessToken': __sessionDict['AccessToken'],
+                                 'RefreshToken': __sessionDict['RefreshToken']}, state=state)
     if not result['OK']:
       return result
 
@@ -395,6 +380,7 @@ class OAuthDB(DB):
     secDN = 'DNProperties/' + proxyDN.replace('/', '-').replace('=', '_')
     groups = secDN + '/Groups'
     provs = secDN + '/ProxyProviders'
+    # FIXME: Need wait solution from CheckIn about mapping DN/VO/ROLE and add only groups current DN support
     prepGroups = parseDict['UsrOptns'].get('Groups') or []
     if groups not in parseDict['UsrOptns']:
       parseDict['UsrOptns'][groups] = prepGroups
@@ -560,7 +546,7 @@ class OAuthDB(DB):
         return result
     return self.__getFields(conn=conn, timeStamp=True, **condDict)
 
-  def killSession(self, state):
+  def killSession(self, session):
     """ Remove session
     
         :param basestring state: session id
@@ -569,17 +555,17 @@ class OAuthDB(DB):
     """
     # Delete entries
     self.log.info('Kill %s session.' % session)
-    result = self.__getFields(['Provider', 'AccessToken', 'RefreshToken'], State=state)
+    result = self.__getFields(['Provider', 'AccessToken', 'RefreshToken'], State=session)
     if not result['OK']:
       return result
     rmDict = result['Value'] and result['Value'][0] or None
     if not rmDict:
-      self.log.verbose(state, ' session not found.')
+      self.log.verbose(session, ' session not found.')
       return S_OK()
-    result = self.deleteEntries('Sessions', condDict={'State': state})
+    result = self.deleteEntries('Sessions', condDict={'State': session})
     if not result['OK']:
       return result
-    self.log.verbose(state, 'session removed.')
+    self.log.verbose(session, 'session removed.')
 
     # Log out from provider
     result = IdProviderFactory().getIdProvider(rmDict['Provider'])
@@ -589,7 +575,7 @@ class OAuthDB(DB):
     result = __provider.logOut(rmDict)
     if not result['OK']:
       return result
-    self.log.verbose(state, 'session killed by %s' % rmDict['Provider'])
+    self.log.verbose(session, 'session killed by %s' % rmDict['Provider'])
     return S_OK()
   
   def updateSession(self, fieldsToUpdate=None, conn=None, condDict=None, state=None):
@@ -602,10 +588,17 @@ class OAuthDB(DB):
 
         :return: S_OK()/S_ERROR()
     """
-    condDict = not condDict and state and {'State': state} or condDict
+    condDict = {'State': state} if not condDict and state else condDict
     self.log.verbose(state or '', 'session update')
     fieldsToUpdate = fieldsToUpdate or {}
     fieldsToUpdate['LastAccess'] = 'UTC_TIMESTAMP()'
+    # Convert seconds to datetime
+    if 'ExpiresIn' in fieldsToUpdate and isinstance(fieldsToUpdate['ExpiresIn'], int):
+      self.log.debug(state or '', 'session, convert access token live time %s seconds to date.' % fieldsToUpdate['ExpiresIn'])
+      result = self._query("SELECT ADDDATE(UTC_TIMESTAMP(), INTERVAL %s SECOND)" % fieldsToUpdate['ExpiresIn'])
+      if not result['OK']:
+        return result
+      fieldsToUpdate['ExpiresIn'] = result['Value'][0][0] if result['Value'] else 'UTC_TIMESTAMP()'
     return self.updateFields('Sessions', updateDict=fieldsToUpdate, condDict=condDict, conn=conn)
 
   def prepareUserParameters(self, parseDict, sourceDict=None):
@@ -647,6 +640,7 @@ class OAuthDB(DB):
           resDict['username'] = parseDict['username'] + str(i)
       resDict['UsrOptns'] = parseDict['UsrOptns']
     else:
+      # FIXME: If user exist need to save diff changes and allow to continue enter to DIRAC, but show warning
       resDict['username'] = result['Value']
       result = Registry.getDNForUsername(resDict['username'])
       if not result['OK']:
@@ -721,7 +715,7 @@ class OAuthDB(DB):
           resDict['UsrOptns'][k] = list(set(resDict['UsrOptns'][k]))
         else:
           resDict['UsrOptns'][k] = ', '.join(v)
-    self.log.debug('Information merged:\n', pprint.pformat(resDict))
+    self.log.debug('User information merged:\n', pprint.pformat(resDict))
     return S_OK(resDict)
 
   def __getFields(self, fields=None, conn=None, timeStamp=False, **kwargs):
