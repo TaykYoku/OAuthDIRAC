@@ -74,12 +74,13 @@ class OAuth2ProxyProvider(ProxyProvider):
       result = self.oauth.getSessionDict(__conn, __params)
       if not result['OK']:
         return result
-      self.log.debug('Found next sessions:\n', pprint.pformat(result['Value']))
+      sessions = result['Value']
+      self.log.debug('Found next sessions:\n', pprint.pformat(sessions))
 
       # Trying to update every access token
       accessTokens = []
-      for i in range(0, len(result['Value'])):
-        sessionDict = result['Value'][i]
+      for i in range(0, len(sessions)):
+        sessionDict = sessions[i]
         if not sessionDict.get('AccessToken'):
           continue
         self.log.verbose('Try to use %s access token.' % sessionDict['AccessToken'])
@@ -96,17 +97,17 @@ class OAuth2ProxyProvider(ProxyProvider):
           if not result['OK']:
             self.log.error(result['Message'])
             continue
+          tokensDict = result['Value']
           self.log.verbose('Tokens of %s successfully updated.' % sessionDict['Provider'])
-          tD = result['Value']
-          exp_datetime = 'ADDDATE(UTC_TIMESTAMP(), INTERVAL %s SECOND)' % tD.get('expires_in') or 0
-          result = self.oauth.updateSession({'ExpiresIn': exp_datetime,
-                                                       'Token_type': tD['token_type'],
-                                                       'AccessToken': tD['access_token']},
-                                                      {'AccessToken': sessionDict['Access_token']})
+          result = self.oauth.updateSession({'ExpiresIn': tokensDict.get('expires_in') or 0,
+                                             'TokenType': tokensDict['token_type'],
+                                             'AccessToken': tokensDict['access_token'],
+                                             'RefreshToken': tokensDict['refresh_token']},
+                                             {'AccessToken': sessionDict['AccessToken']})
           if not result['OK']:
             self.log.error(result['Message'])
             continue
-          accessTokens.append(tD['access_token'])
+          accessTokens.append(tokensDict['access_token'])
         accessTokens.append(sessionDict['AccessToken'])
     if not accessTokens:
       return S_OK({'Status': 'needToAuth', 'IdP': self.parameters['IdProvider']})
