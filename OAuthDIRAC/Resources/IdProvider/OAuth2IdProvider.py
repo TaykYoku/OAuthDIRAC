@@ -156,14 +156,16 @@ class OAuth2IdProvider(IdProvider):
             resDict['UsrOptns']['Groups'].append(group)
           
           if __parse['ROLE'] not in roleGroup:
-            resDict['nosupport'].append(__parse['ROLE'])
-            continue
+            __parse['ROLE'] = __parse['ROLE'].replace('/Role=member', '')
+            if __parse['ROLE'] not in roleGroup:
+              resDict['nosupport'].append(__parse['ROLE'])
+              continue
 
           # Set groups with role
           for group in groupRole:
             if __parse['ROLE'] == groupRole[group]:
               resDict['UsrOptns']['Groups'].append(group)
-
+    resDict['nosupport'].sort()
     return S_OK(resDict)
 
   def getCredentials(self, kwargs):
