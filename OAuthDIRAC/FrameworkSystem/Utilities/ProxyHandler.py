@@ -102,7 +102,7 @@ class ProxyHandler(WebHandler):
         if self.args.get('voms'):
           voms = Registry.getVOForGroup(group)
           result = gProxyManager.downloadVOMSProxy(DN, group, requiredVOMSAttribute=voms,
-                                                    requiredTimeLeft=proxyLifeTime)
+                                                   requiredTimeLeft=proxyLifeTime)
         else:
           result = gProxyManager.downloadProxy(DN, group, requiredTimeLeft=proxyLifeTime)
         if not result['OK']:

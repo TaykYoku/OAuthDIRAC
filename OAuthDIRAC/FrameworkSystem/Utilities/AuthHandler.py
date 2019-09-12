@@ -104,10 +104,7 @@ class AuthHandler(WebHandler):
     if not self.args.get('status'):
       raise WErr(404, '"status" argument is empty.')
     self.log.notice('%s session, get status of authorization' % self.args['status'],
-                        self.args.get('proxy') and 'and try to return proxy' or '')
-    # result = yield self.threadTask(gOAuthCli.waitStateResponse, self.args['status'], self.args.get('group'),
-    #                               self.args.get('proxy'), self.args.get('voms'), self.args.get('proxyLifeTime'),
-    #                               self.args.get('timeOut'), self.args.get('sleepTime'))
+                    self.args.get('proxy') and 'and try to return proxy' or '')
     result = yield self.threadTask(gOAuthCli.getSessionStatus, self.args['status'])
     if not result['OK']:
       raise WErr(500, result['Message'])
