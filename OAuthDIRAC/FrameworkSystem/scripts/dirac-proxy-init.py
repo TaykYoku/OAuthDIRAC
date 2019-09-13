@@ -24,10 +24,12 @@ __RCSID__ = "$Id$"
 
 class Params(ProxyGeneration.CLIParams):
 
+  session = None
   provider = ''
   addEmail = False
   addQRcode = False
   addVOMSExt = False
+  addSession = False
   addProvider = False
   uploadProxy = False
   uploadPilot = False
@@ -50,6 +52,11 @@ class Params(ProxyGeneration.CLIParams):
     self.addVOMSExt = True
     return S_OK()
 
+  def setSession(self, arg):
+    self.session = arg
+    self.addSession = True
+    return S_OK()
+
   def setUploadProxy(self, _arg):
     self.uploadProxy = True
     return S_OK()
@@ -57,8 +64,9 @@ class Params(ProxyGeneration.CLIParams):
   def registerCLISwitches(self):
     ProxyGeneration.CLIParams.registerCLISwitches(self)
     Script.registerSwitch("U", "upload", "Upload a long lived proxy to the ProxyManager", self.setUploadProxy)
-    Script.registerSwitch("e:", "email:", "Send oauth authentification url on email", self.setEmail)
-    Script.registerSwitch("P:", "Provider:", "Set provider name for authentification", self.setProvider)
+    Script.registerSwitch("e:", "email=", "Send oauth authentification url on email", self.setEmail)
+    Script.registerSwitch("P:", "provider=", "Set provider name for authentification", self.setProvider)
+    Script.registerSwitch("", "session=", "Use exist authentication session", self.setSession)
     Script.registerSwitch("Q", "qrcode", "Print link as QR code", self.setQRcode)
     Script.registerSwitch("M", "VOMS", "Add voms extension", self.setVOMSExt)
     
@@ -254,11 +262,15 @@ class ProxyInit(object):
     import itertools
     import threading
     import webbrowser
+    import Cookie
 
     from OAuthDIRAC.FrameworkSystem.Utilities.halo import Halo
 
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    authAPI = None
+    proxyAPI = None
     spinner = Halo()
+    s = requests.Session()
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     def restRequest(url, endpoint='', metod='GET', **kwargs):
       """ Method to do http requests """
@@ -270,7 +282,7 @@ class ProxyInit(object):
           else:
             __opts += '&%s=%s' % (key, kwargs[key])
       try:
-        r = requests.get('%s%s?%s' % (url, endpoint, __opts), verify=False)
+        r = s.get('%s%s?%s' % (url, endpoint, __opts), verify=False)
         r.raise_for_status()
         return S_OK(r)
       except requests.exceptions.Timeout:
@@ -287,7 +299,7 @@ class ProxyInit(object):
       try:
         import pyqrcode
       except Exception as ex:
-        gLogger.warn('pyqrcode library is not installed.')
+        return S_ERROR('pyqrcode library is not installed.')
       else:
         __qr = '\n'
         qrA = pyqrcode.create(url).code
@@ -310,83 +322,92 @@ class ProxyInit(object):
             if p == '00':  # white bg
               __qr += ' '
           __qr += ' \033[0m\n'
-        gLogger.notice(__qr)
+      return S_OK(__qr)
 
-   
-    spinner.start('Authentification from %s.' % self.__piParams.provider)
+    with Halo('Authentification from %s.' % self.__piParams.provider) as spin:
+      spin.text = 'Authentification from %s.' % self.__piParams.provider
 
-    # Get https endpoint of OAuthService API from http API of ConfigurationService
-    confUrl = gConfig.getValue("/LocalInstallation/ConfigurationServerAPI")
-    if not confUrl:
-      spinner.fail('Cannot get http url of configuration server.')
-      sys.exit(1)
-    result = restRequest(confUrl, '/get', option='/Systems/Framework/Production/URLs/AuthAPI')
-    if not result['OK']:
-      spinner.fail('Cannot get URL of authentication server:\n %s' % result['Message'])
-      sys.exit(1)
-    authAPI = result['Value'].text
+      # Get https endpoint of OAuthService API from http API of ConfigurationService
+      confUrl = gConfig.getValue("/LocalInstallation/ConfigurationServerAPI")
+      if not confUrl:
+        sys.exit('Cannot get http url of configuration server.')
+      result = restRequest(confUrl, '/get', option='/Systems/Framework/Production/URLs/AuthAPI')
+      if not result['OK']:
+        sys.exit('Cannot get URL of authentication server:\n %s' % result['Message'])
+      authAPI = result['Value'].text
+      result = restRequest(confUrl, '/get', option='/Systems/Framework/Production/URLs/ProxyAPI')
+      if not result['OK']:
+        sys.exit('Cannot get URL of authentication server:\n %s' % result['Message'])
+      proxyAPI = result['Value'].text
+
+      # Submit authorization session
+      params = {'provider': self.__piParams.provider}
+      if self.__piParams.session:
+        params['state'] = self.__piParams.session
+      elif self.__piParams.addEmail:
+        params['email'] = self.__piParams.Email
+      result = restRequest(authAPI, '/auth', **params)
+      if not result['OK']:
+        sys.exit(result['Message'])
+      authDict = result['Value'].json()
+
+      # Create authorization link
+      newSession = authDict.get('Session')
+      if not newSession:
+        sys.exit('Cannot get link for authentication.')
+      if authDict.get('Comment'):
+        spinner.info(authDict['Comment'].strip())
+      spin.result = 'info'
     
-    # Submit authorization session
-    params = {'provider': self.__piParams.provider}
-    if self.__piParams.addEmail:
-      params['email'] = self.__piParams.Email
-    result = restRequest(authAPI, '/auth', **params)
-    if not result['OK']:
-      spinner.fail(result['Message'])
-      sys.exit(1)
-    authDict = result['Value'].json()
-
-    # Create authorization link
-    state = authDict.get('Session')
-    comment = authDict.get('Comment')
-    if not state:
-      spinner.fail('Cannot get link for authentication.')
-      sys.exit(1)
 
     if authDict['Status'] == 'needToAuth':
-      url = '%s/auth?getlink=%s' % (authAPI, state)
-      spinner.text = '%s authentication URL: %s' % (self.__piParams.provider, url)
-
-    spinner.stop()
+      if self.__piParams.session:
+        spinner.warn('Cannot authenticate throught %s session.', self.__piParams.session)
+        sys.exit(0)
+      self.__piParams.session = newSession
+      url = '%s/auth?getlink=%s' % (authAPI, self.__piParams.session)
+      # Show QR code
+      if self.__piParams.addQRcode:
+        result = qrterminal(url)
+        if not result['OK']:
+          spinner.fail(result['Message'])
+        spinner.info('Scan QR code to continue: %s' % result['Value'])
+        spinner.text = 'Or use link: %s' % url
+      else:
+        spinner.text = 'Use link to continue: %s' % url
     
-    # Try to open in default browser
-    if webbrowser.open_new_tab(url):
-      spinner.text = 'Opening in default browser..'
+      # Try to open in default browser
+      if webbrowser.open_new_tab(url):
+        spinner.text = 'Opening %s in default browser..' % url
+    else:
+      spinner.text = 'Use %s session for authenticate' % self.__piParams.session
 
-    # Comment about e-mail
-    if comment:
-      gLogger.notice(comment)
-    
-    # Show QR code
-    if self.__piParams.addQRcode:
-      qrterminal(url)
-    
-    spinner.start()
-    # Loop: waiting status of request
-    addVOMS = self.__piParams.addVOMSExt or Registry.getGroupOption(self.__piParams.diracGroup, "AutoAddVOMS", False)
-    __start = time.time()
-    __eNum = 0
-    while True:
-      if time.time() - __start > 300:
-        spinner.fail('Time out.')
-        sys.exit(1)
+    with spinner:
+      # Loop: waiting status of request
+      addVOMS = self.__piParams.addVOMSExt or Registry.getGroupOption(self.__piParams.diracGroup, "AutoAddVOMS", False)
+      __start = time.time()
+      __eNum = 0
+      while True:
+        time.sleep(5)
+        if time.time() - __start > 300:
+          sys.exit('Time out.')
 
-      result = restRequest(authAPI, '/status', status=state)
-      if not result['OK']:
-        if __eNum < 3:
-          __eNum += 1
-          spinner.color = 'red'
+        result = restRequest(authAPI, '/status', status=self.__piParams.session)
+        if not result['OK']:
+          if __eNum < 3:
+            __eNum += 1
+            spinner.color = 'red'
+            continue
+          sys.exit(result['Message'])
+        statusDict = result['Value'].json()
+        if statusDict['Status'] == 'prepared':
+          spinner.color = 'green'
           continue
-        spinner.fail(result['Message'])
-        sys.exit(1)
-      statusDict = result['Value'].json()
-      if statusDict['Status'] == 'prepared':
-        spinner.color = 'green'
-        continue
-      if statusDict['Status'] == 'in progress':
-        spinner.text = '"%s" session %s' % (state, statusDict['Status']) 
-        spinner.color = 'green'
-        continue
+        if statusDict['Status'] == 'in progress':
+          spinner.text = '"%s" session %s' % (self.__piParams.session, statusDict['Status']) 
+          spinner.color = 'green'
+          continue
+        break
 
       if statusDict['Status'] != 'authed':
         if statusDict['Status'] == 'authed and reported':
@@ -395,34 +416,36 @@ class ProxyInit(object):
         elif statusDict['Status'] == 'visitor':
           spinner.warn('Authenticated success. You have permissions as Visitor.')
           sys.exit(0)
-        sys.exit(1)
-      spinner.info('Authenticated success.')
-      gLogger.notice(statusDict['Comment'])
-      
-      with Halo(text='Downloading proxy'):
-        result = restRequest(confUrl, '/get', option='/Systems/Framework/Production/URLs/ProxyAPI')
-        if not result['OK']:
-          sys.exit('Cannot get URL of authentication server:\n %s' % result['Message'])
-        result = restRequest(result['Value'].text, '', group=self.__piParams.diracGroup,
-                             lifetime=self.__piParams.proxyLifeTime, voms=addVOMS)
-        if not result['OK']:
-          sys.exit(result['Message'])
-        proxy = result['Value'].text
-        if not proxy:
-          sys.exit("Result is empty.")
+        sys.exit('Authentication failed.')
+      spinner.text = 'Authenticated success.'
+    
+    spinner.info(statusDict['Comment'].strip())
+    
+    with Halo(text='Downloading proxy'):
+      # Set provider and session to cookie
+      __domain = s.cookies.list_domains()[0]
+      s.cookies.set("TypeAuth", self.__piParams.provider, domain=__domain)
+      s.cookies.set("StateAuth", '{"%s":"%s"}' % (self.__piParams.provider,
+                                                  self.__piParams.session or ''), domain=__domain)
+      result = restRequest(proxyAPI, '/proxy', group=self.__piParams.diracGroup,
+                            lifetime=self.__piParams.proxyLifeTime, voms=addVOMS)
+      if not result['OK']:
+        sys.exit(result['Message'])
+      proxy = result['Value'].text
+      if not proxy:
+        sys.exit("Result is empty.")
 
-      if not self.__piParams.proxyLoc:
-        self.__piParams.proxyLoc = '/tmp/x509up_u%s' % os.getuid()
+    if not self.__piParams.proxyLoc:
+      self.__piParams.proxyLoc = '/tmp/x509up_u%s' % os.getuid()
 
-      with Halo(text='Saving proxy to %s' % self.__piParams.proxyLoc):
-        try:
-          with open(self.__piParams.proxyLoc, 'w') as fd:
-            fd.write(proxy.encode("UTF-8"))
-          os.chmod(self.__piParams.proxyLoc, stat.S_IRUSR | stat.S_IWUSR)
-        except Exception as e:
-          return S_ERROR("%s :%s" % (self.__piParams.proxyLoc, repr(e).replace(',)', ')')))
-        self.__piParams.certLoc = self.__piParams.proxyLoc
-      break
+    with Halo(text='Saving proxy to %s' % self.__piParams.proxyLoc):
+      try:
+        with open(self.__piParams.proxyLoc, 'w') as fd:
+          fd.write(proxy.encode("UTF-8"))
+        os.chmod(self.__piParams.proxyLoc, stat.S_IRUSR | stat.S_IWUSR)
+      except Exception as e:
+        return S_ERROR("%s :%s" % (self.__piParams.proxyLoc, repr(e).replace(',)', ')')))
+      self.__piParams.certLoc = self.__piParams.proxyLoc
     
     result = Script.enableCS()
     if not result['OK']:
