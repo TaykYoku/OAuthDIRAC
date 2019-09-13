@@ -220,6 +220,10 @@ class Halo(object):
 
         CLEAR_LINE -- Code to clear the line
     """
+    class Done(Exception):
+        """ Done exception """
+        pass
+
     # Need for cursor
     if os.name == 'nt':
         import ctypes
@@ -230,7 +234,7 @@ class Halo(object):
     SPINNER_PLACEMENTS = ('left', 'right',)
 
     def __init__(self, text='', color='green', text_color=None, spinner=None,
-                 animation=None, placement='left', interval=-1, enabled=True, stream=sys.stdout):
+                 animation=None, placement='left', interval=-1, enabled=True, stream=sys.stdout, result='succeed'):
         """ Constructs the Halo object.
 
             :param basestring text: Text to display.
@@ -245,6 +249,7 @@ class Halo(object):
             :param boolean enabled: Spinner enabled or not.
             :param io stream: IO output.
         """
+        self._result = result
         self._color = color
         self._animation = animation
         self.spinner = spinner
@@ -280,12 +285,27 @@ class Halo(object):
     def __exit__(self, eType, eValue, traceback):
         """ Stops the spinner. For use in context managers."""
         if eType:
-            if isinstance(eValue, SystemExit) and eValue.code in [None, 0]:
-                self.succeed()
+            if isinstance(eValue, SystemExit):
+                if eValue.code in [None, 0, 'succeed']:
+                    self.succeed()
+                elif eValue.message == 'warn':
+                    self.warn()
+                elif eValue.message == 'info':
+                    self.info()
+                elif eValue.message == 'stop':
+                    self.stop()
+                else:
+                    self.fail(eValue.message if isinstance(eValue.message, str) else None)
             else:
-                self.fail(eValue.message if isinstance(eValue.message, str) else None)
-        else:
+                self.fail()
+        elif self._result == 'succeed':
             self.succeed()
+        elif self._result == 'warn':
+            self.warn()
+        elif self._result == 'info':
+            self.info()
+        else:
+            self.stop()
 
     def __call__(self, f):
         """ Allow the Halo object to be used as a regular function decorator.
@@ -329,6 +349,22 @@ class Halo(object):
             :param basestring text: Defines the text value for spinner
         """
         self._text = self._get_text(text)
+    
+    @property
+    def result(self):
+        """ Getter for result property.
+            
+            :return: basestring -- result value
+        """
+        return self._result
+
+    @text.setter
+    def result(self, result):
+        """ Setter for result property.
+        
+            :param basestring result: Defines the result of with
+        """
+        self._result = result
 
     @property
     def text_color(self):
@@ -625,6 +661,7 @@ class Halo(object):
             :param basestring text: Text to be shown in final frame
             :param basestring symbol: Symbol to be shown in final frame
         """
+        self._result = None
         if not (symbol and text):
             self.__stop()
         if not self.enabled:

@@ -86,7 +86,7 @@ class AuthHandler(WebHandler):
       raise WErr(500, 'Not correct status "%s" of %s' % (result['Value']['Status'], self.args['provider']))
 
     gLogger.notice(result['Value'], '<<<<<<<<')
-    self.finish(json.dumps(result['Value']) if isinstance(result['Value'], dict) else result['Value'])
+    self.finishJEncode(result['Value'])#json.dumps(result['Value']) if isinstance(result['Value'], dict) else result['Value'])
 
   @asyncGen
   def web_status(self):

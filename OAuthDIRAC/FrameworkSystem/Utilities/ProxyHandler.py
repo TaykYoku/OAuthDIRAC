@@ -66,7 +66,9 @@ class ProxyHandler(WebHandler):
       else:
         group = self.args.get('group')
         userName = self.getUserName()
-        proxyLifeTime = self.args.get('lifetime') or 3600 * 12
+        proxyLifeTime = 3600 * 12
+        if re.match('[0-9]+', self.args.get('lifetime') or ''):
+          proxyLifeTime = int(self.args.get('lifetime'))
 
         # Need group to continue
         if not group:
