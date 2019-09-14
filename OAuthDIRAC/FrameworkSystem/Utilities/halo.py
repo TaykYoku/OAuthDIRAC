@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=unsubscriptable-object
-""" Changed for DIRAC. Beautiful terminal spinners in Python. Source: https://github.com/manrajgrover/halo
+""" Changed for DIRAC. Beautiful terminal spinners in Python. Source: https://github.com/manrajgrover/halo and dependens
 """
 from __future__ import absolute_import, unicode_literals
 
@@ -20,12 +20,12 @@ try:
 except ImportError:
     from backports.shutil_get_terminal_size import get_terminal_size
 
-def colored(text, color=None, on_color=None, attrs=None):
+def colored(text, color=None, onColor=None, attrs=None):
     """ Colorize text, while stripping nested ANSI color sequences.
         
         :param basestring text: text
         :param basestring color: text colors -> red, green, yellow, blue, magenta, cyan, white.
-        :param basestring on_color: text highlights -> on_red, on_green, on_yellow, on_blue, on_magenta, on_cyan, on_white.
+        :param basestring onColor: text highlights -> on_red, on_green, on_yellow, on_blue, on_magenta, on_cyan, on_white.
         :param list attrs: attributes -> bold, dark, underline, blink, reverse, concealed.
         --
             colored('Hello, World!', 'red', 'on_grey', ['blue', 'blink'])
@@ -45,17 +45,17 @@ def colored(text, color=None, on_color=None, attrs=None):
     RESET_RE = '\033\[0m'
     
     if os.getenv('ANSI_COLORS_DISABLED') is None:
-        fmt_str = '\033[%dm%s'
+        fmtStr = '\033[%dm%s'
         if color is not None:
             text = re.sub(COLORS_RE + '(.*?)' + RESET_RE, r'\1', text)
-            text = fmt_str % (COLORS[color], text)
-        if on_color is not None:
+            text = fmtStr % (COLORS[color], text)
+        if onColor is not None:
             text = re.sub(HIGHLIGHTS_RE + '(.*?)' + RESET_RE, r'\1', text)
-            text = fmt_str % (HIGHLIGHTS[on_color], text)
+            text = fmtStr % (HIGHLIGHTS[onColor], text)
         if attrs is not None:
             text = re.sub(ATTRIBUTES_RE + '(.*?)' + RESET_RE, r'\1', text)
             for attr in attrs:
-                text = fmt_str % (ATTRIBUTES[attr], text)
+                text = fmtStr % (ATTRIBUTES[attr], text)
         return text + RESET
     else:
         return text
@@ -92,11 +92,11 @@ class StreamWrapper(object):
             if stream is not None and (stream is sys.__stdout__ or stream is sys.__stderr__):
                 return True
         try:
-            stream_isatty = stream.isatty
+            streamIsATTY = stream.isatty
         except AttributeError:
             return False
         else:
-            return stream_isatty()
+            return streamIsATTY()
 
     @property
     def closed(self):
@@ -119,29 +119,29 @@ class PreWrapp(object):
     def write(self, text):
         self.wrapped.write(text)
         self.wrapped.flush()
-        self.reset_all()
+        self.resetAll()
 
-    def reset_all(self):
+    def resetAll(self):
         if not self.stream.closed:
             self.wrapped.write('\033[0m')
 
 
-def reset_all():
+def resetAll():
     if PreWrapp is not None:    # Issue #74: objects might become None at exit
-        PreWrapp(sys.stdout).reset_all()
+        PreWrapp(sys.stdout).resetAll()
 
 sys.stdout = PreWrapp(sys.stdout).stream
 sys.stderr = PreWrapp(sys.stderr).stream
-atexit.register(reset_all)
+atexit.register(resetAll)
 
-def is_supported():
+def isSupported():
     """ Check whether operating system supports main symbols or not.
 
         :return: boolen -- Whether operating system supports main symbols or not
     """
     return platform.system() != 'Windows'
 
-def get_environment():
+def getEnvironment():
     """ Get the environment in which halo is running
 
         :return: basestring -- Environment name
@@ -161,7 +161,7 @@ def get_environment():
     except NameError:
         return 'terminal'
 
-def colored_frame(frame, color):
+def coloredFrame(frame, color):
     """ Color the frame with given color and returns.
 
         :param basestring frame: Frame to be colored
@@ -171,7 +171,7 @@ def colored_frame(frame, color):
     """
     return colored(frame, color, attrs=['bold'])
 
-def is_text_type(text):
+def isTextType(text):
     """ Check if given parameter is a string or not
         
         :param basestring text: Parameter to be checked for text type
@@ -180,7 +180,7 @@ def is_text_type(text):
     """
     return bool(isinstance(text, six.text_type) or isinstance(text, six.string_types))
 
-def decode_utf_8_text(text):
+def decodeUTF8Text(text):
     """ Decode the text from utf-8 format
 
         :param basestring text: String to be decoded
@@ -192,7 +192,7 @@ def decode_utf_8_text(text):
     except (TypeError, ValueError):
         return text
 
-def encode_utf_8_text(text):
+def encodeUTF8Text(text):
     """ Encodes the text to utf-8 format
 
         :param basestring text: String to be encoded
@@ -204,15 +204,14 @@ def encode_utf_8_text(text):
     except (TypeError, ValueError):
         return text
 
-def get_terminal_columns():
+def getTerminalColumns():
     """ Determine the amount of available columns in the terminal
 
         :return: int -- Terminal width
     """
-    terminal_size = get_terminal_size()
     # If column size is 0 either we are not connected
     # to a terminal or something else went wrong. Fallback to 80.
-    return 80 if terminal_size.columns == 0 else terminal_size.columns
+    return 80 if get_terminal_size().columns == 0 else get_terminal_size().columns
 
 
 class Halo(object):
@@ -233,13 +232,13 @@ class Halo(object):
     CLEAR_LINE = '\033[K'
     SPINNER_PLACEMENTS = ('left', 'right',)
 
-    def __init__(self, text='', color='green', text_color=None, spinner=None,
+    def __init__(self, text='', color='green', textColor=None, spinner=None,
                  animation=None, placement='left', interval=-1, enabled=True, stream=sys.stdout, result='succeed'):
         """ Constructs the Halo object.
 
             :param basestring text: Text to display.
             :param basestring color: Color of the text.
-            :param basestring text_color: Color of the text to display.
+            :param basestring textColor: Color of the text to display.
             :param basestring,dict spinner: String or dictionary representing spinner.
             :param basesrting animation: Animation to apply if text is too large. Can be one of `bounce`, `marquee`.
                    Defaults to ellipses.
@@ -254,28 +253,28 @@ class Halo(object):
         self._animation = animation
         self.spinner = spinner
         self.text = text
-        self._text_color = text_color
+        self._textColor = textColor
         self._interval = int(interval) if int(interval) > 0 else self._spinner['interval']
         self._stream = stream
         self.placement = placement
-        self._frame_index = 0
-        self._text_index = 0
-        self._spinner_thread = None
-        self._stop_spinner = None
-        self._spinner_id = None
+        self._frameIndex = 0
+        self._textIndex = 0
+        self._spinnerThread = None
+        self._stopSpinner = None
+        self._spinnerId = None
         self.enabled = enabled
-        environment = get_environment()
+        environment = getEnvironment()
         
-        def clean_up():
+        def cleanUp():
             """ Handle cell execution"""
             self.__stop()
 
         if environment in ('ipython', 'jupyter'):
             from IPython import get_ipython
             ip = get_ipython()
-            ip.events.register('post_run_cell', clean_up)
+            ip.events.register('post_run_cell', cleanUp)
         else:  # default terminal
-            atexit.register(clean_up)
+            atexit.register(cleanUp)
 
     def __enter__(self):
         """ Starts the spinner on a separate thread. For use in context managers.
@@ -331,8 +330,8 @@ class Halo(object):
             :param dict,basestring spinner: Defines the spinner value with frame and interval
         """
         self._spinner = {"interval": 80, "frames": ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]}
-        self._frame_index = 0
-        self._text_index = 0
+        self._frameIndex = 0
+        self._textIndex = 0
 
     @property
     def text(self):
@@ -348,7 +347,7 @@ class Halo(object):
         
             :param basestring text: Defines the text value for spinner
         """
-        self._text = self._get_text(text)
+        self._text = self._getText(text)
     
     @property
     def result(self):
@@ -367,20 +366,20 @@ class Halo(object):
         self._result = result
 
     @property
-    def text_color(self):
+    def textColor(self):
         """ Getter for text color property.
         
             :return: basestring -- text color value
         """
-        return self._text_color
+        return self._textColor
 
-    @text_color.setter
-    def text_color(self, text_color):
+    @textColor.setter
+    def textColor(self, textColor):
         """ Setter for text color property.
         
-            :param basestring text_color: Defines the text color value for spinner
+            :param basestring textColor: Defines the text color value for spinner
         """
-        self._text_color = text_color
+        self._textColor = textColor
 
     @property
     def color(self):
@@ -422,7 +421,7 @@ class Halo(object):
         
             :return: basestring -- Spinner id value
         """
-        return self._spinner_id
+        return self._spinnerId
 
     @property
     def animation(self):
@@ -439,9 +438,9 @@ class Halo(object):
             :param basestring animation: Defines the animation of the spinner
         """
         self._animation = animation
-        self._text = self._get_text(self._text['original'])
+        self._text = self._getText(self._text['original'])
 
-    def _check_stream(self):
+    def _checkStream(self):
         """ Returns whether the stream is open, and if applicable, writable
 
             :return: bool -- Whether the stream is open
@@ -451,11 +450,11 @@ class Halo(object):
         try:
             # Attribute access kept separate from invocation, to avoid
             # swallowing AttributeErrors from the call which should bubble up.
-            check_stream_writable = self._stream.writable
+            checkStreamWritable = self._stream.writable
         except AttributeError:
             pass
         else:
-            return check_stream_writable()
+            return checkStreamWritable()
         return True
 
     def _write(self, s):
@@ -463,15 +462,15 @@ class Halo(object):
 
             :params basestring s: Characters to write to the stream
         """
-        if self._check_stream():
+        if self._checkStream():
             self._stream.write(s)
 
-    def _hide_cursor(self):
+    def _hideCursor(self):
         """ Disable the user's blinking cursor
         """
-        if self._check_stream() and self._stream.isatty():
+        if self._checkStream() and self._stream.isatty():
             # for sid in [signal.SIGINT, signal.SIGTSTP]:
-            #     signal.signal(sid, self._show_cursor)
+            #     signal.signal(sid, self._showCursor)
             if os.name == 'nt':
                 ci = _CursorInfo()
                 handle = ctypes.windll.kernel32.GetStdHandle(-11)
@@ -482,10 +481,10 @@ class Halo(object):
                 sys.stdout.write("\033[?25l")
                 sys.stdout.flush()
 
-    def _show_cursor(self, *args):
+    def _showCursor(self, *args):
         """ Re-enable the user's blinking cursor
         """
-        if self._check_stream() and self._stream.isatty():
+        if self._checkStream() and self._stream.isatty():
             if os.name == 'nt':
                 ci = _CursorInfo()
                 handle = ctypes.windll.kernel32.GetStdHandle(-11)
@@ -496,41 +495,41 @@ class Halo(object):
                 sys.stdout.write("\033[?25h")
                 sys.stdout.flush()
 
-    def _get_text(self, text):
+    def _getText(self, text):
         """ Creates frames based on the selected animation
 
             :params basestring text: text
         """
         animation = self._animation
-        stripped_text = text.strip()
+        strippedText = text.strip()
 
         # Check which frame of the animation is the widest
-        max_spinner_length = max([len(i) for i in self._spinner['frames']])
+        maxSpinnerLength = max([len(i) for i in self._spinner['frames']])
         
         # Subtract to the current terminal size the max spinner length
         # (-1 to leave room for the extra space between spinner and text)
-        terminal_width = get_terminal_columns() - max_spinner_length - 1
-        text_length = len(stripped_text)
+        terminalWidth = getTerminalColumns() - maxSpinnerLength - 1
+        textLength = len(strippedText)
         frames = []
-        if terminal_width < text_length and animation:
+        if terminalWidth < textLength and animation:
 
             if animation == 'bounce':
                 # Make the text bounce back and forth
-                for x in range(0, text_length - terminal_width + 1):
-                    frames.append(stripped_text[x:terminal_width + x])
+                for x in range(0, textLength - terminalWidth + 1):
+                    frames.append(strippedText[x:terminalWidth + x])
                 frames.extend(list(reversed(frames)))
 
             elif 'marquee':
                 # Make the text scroll like a marquee
-                stripped_text = stripped_text + ' ' + stripped_text[:terminal_width]
-                for x in range(0, text_length + 1):
-                    frames.append(stripped_text[x:terminal_width + x])
+                strippedText = strippedText + ' ' + strippedText[:terminalWidth]
+                for x in range(0, textLength + 1):
+                    frames.append(strippedText[x:terminalWidth + x])
 
-        elif terminal_width < text_length and not animation:
+        elif terminalWidth < textLength and not animation:
             # Add ellipsis if text is larger than terminal width and no animation was specified
-            frames = [stripped_text[:terminal_width - 4] + '... ']
+            frames = [strippedText[:terminalWidth - 4] + '... ']
         else:
-            frames = [stripped_text]
+            frames = [strippedText]
         return {'original': text, 'frames': frames}
 
     def clear(self):
@@ -540,7 +539,7 @@ class Halo(object):
         self._write(self.CLEAR_LINE)
         return self
 
-    def _render_frame(self):
+    def _renderFrame(self):
         """ Renders the frame on the line after clearing it.
         """
         if not self.enabled:
@@ -554,13 +553,13 @@ class Halo(object):
         try:
             self._write(output)
         except UnicodeEncodeError:
-            self._write(encode_utf_8_text(output))
+            self._write(encodeUTF8Text(output))
 
     def render(self):
         """ Runs the render until thread flag is set.
         """
-        while not self._stop_spinner.is_set():
-            self._render_frame()
+        while not self._stopSpinner.is_set():
+            self._renderFrame()
             time.sleep(0.001 * self._interval)
         return self
 
@@ -568,27 +567,27 @@ class Halo(object):
         """ Builds and returns the frame to be rendered
         """
         frames = self._spinner['frames']
-        frame = frames[self._frame_index]
+        frame = frames[self._frameIndex]
         if self._color:
-            frame = colored_frame(frame, self._color)
-        self._frame_index += 1
-        self._frame_index = self._frame_index % len(frames)
-        text_frame = self.text_frame()
-        return u'{0} {1}'.format(*[(text_frame, frame) if self._placement == 'right' else (frame, text_frame)][0])
+            frame = coloredFrame(frame, self._color)
+        self._frameIndex += 1
+        self._frameIndex = self._frameIndex % len(frames)
+        textFrame = self.textFrame()
+        return u'{0} {1}'.format(*[(textFrame, frame) if self._placement == 'right' else (frame, textFrame)][0])
 
-    def text_frame(self):
+    def textFrame(self):
         """ Builds and returns the text frame to be rendered
         """
         if len(self._text['frames']) == 1:
-            if self._text_color:
-                return colored_frame(self._text['frames'][0], self._text_color)
+            if self._textColor:
+                return coloredFrame(self._text['frames'][0], self._textColor)
             # Return first frame (can't return original text because at this point it might be ellipsed)
             return self._text['frames'][0]
         frames = self._text['frames']
-        frame = frames[self._text_index]
-        self._text_index += 1
-        self._text_index = self._text_index % len(frames)
-        return colored_frame(frame, self._text_color) if self._text_color else frame
+        frame = frames[self._textIndex]
+        self._textIndex += 1
+        self._textIndex = self._textIndex % len(frames)
+        return coloredFrame(frame, self._textColor) if self._textColor else frame
 
     def start(self, text=None):
         """ Starts the spinner on a separate thread.
@@ -597,30 +596,30 @@ class Halo(object):
         """
         if text is not None:
             self.text = text
-        if self._spinner_id is not None:
+        if self._spinnerId is not None:
             return self
-        if not (self.enabled and self._check_stream()):
+        if not (self.enabled and self._checkStream()):
             return self
-        #self._hide_cursor()
-        self._stop_spinner = threading.Event()
-        self._spinner_thread = threading.Thread(target=self.render)
-        self._spinner_thread.setDaemon(True)
-        self._render_frame()
-        self._spinner_id = self._spinner_thread.name
-        self._spinner_thread.start()
+        #self._hideCursor()
+        self._stopSpinner = threading.Event()
+        self._spinnerThread = threading.Thread(target=self.render)
+        self._spinnerThread.setDaemon(True)
+        self._renderFrame()
+        self._spinnerId = self._spinnerThread.name
+        self._spinnerThread.start()
         return self
     
     def __stop(self):
-        if self._spinner_thread and self._spinner_thread.is_alive():
-            self._stop_spinner.set()
-            self._spinner_thread.join()
+        if self._spinnerThread and self._spinnerThread.is_alive():
+            self._stopSpinner.set()
+            self._spinnerThread.join()
 
         if self.enabled:
             self.clear()
 
-        self._frame_index = 0
-        self._spinner_id = None
-        self._show_cursor()
+        self._frameIndex = 0
+        self._spinnerId = None
+        self._showCursor()
         return self
 
     def succeed(self, text=None):
@@ -661,19 +660,18 @@ class Halo(object):
             :param basestring text: Text to be shown in final frame
             :param basestring symbol: Symbol to be shown in final frame
         """
-        self._result = None
         if not (symbol and text):
             self.__stop()
         if not self.enabled:
             return self
         self.__stop()
-        symbol = decode_utf_8_text(symbol) if symbol is not None else ''
-        text = decode_utf_8_text(text) if text is not None else self._text['original']
-        symbol = colored_frame(symbol, self._color) if self._color and symbol else symbol
-        text = colored_frame(text, self._text_color) if self._text_color and text else text.strip()
+        symbol = decodeUTF8Text(symbol) if symbol is not None else ''
+        text = decodeUTF8Text(text) if text is not None else self._text['original']
+        symbol = coloredFrame(symbol, self._color) if self._color and symbol else symbol
+        text = coloredFrame(text, self._textColor) if self._textColor and text else text.strip()
         output = u'{0} {1}\n'.format(*[(text, symbol) if self._placement == 'right' else (symbol, text)][0])
         try:
             self._write(output)
         except UnicodeEncodeError:
-            self._write(encode_utf_8_text(output))
+            self._write(encodeUTF8Text(output))
         return self

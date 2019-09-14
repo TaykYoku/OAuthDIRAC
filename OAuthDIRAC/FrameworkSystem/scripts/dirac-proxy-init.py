@@ -300,33 +300,30 @@ class ProxyInit(object):
         import pyqrcode
       except Exception as ex:
         return S_ERROR('pyqrcode library is not installed.')
-      else:
-        __qr = '\n'
-        qrA = pyqrcode.create(url).code
-        qrA.insert(0, [0 for i in range(0, len(qrA[0]))])
+      __qr = '\n'
+      qrA = pyqrcode.create(url).code
+      qrA.insert(0, [0 for i in range(0, len(qrA[0]))])
+      qrA.append([0 for i in range(0, len(qrA[0]))])
+      if not (len(qrA) % 2) == 0:
         qrA.append([0 for i in range(0, len(qrA[0]))])
-        if not (len(qrA) % 2) == 0:
-          qrA.append([0 for i in range(0, len(qrA[0]))])
-        for i in range(0, len(qrA)):
-          if not (i % 2) == 0:
-            continue
-          __qr += '\033[0;30;47m '
-          for j in range(0, len(qrA[0])):
-            p = str(qrA[i][j]) + str(qrA[i + 1][j])
-            if p == '11':  # black bg
-              __qr += '\033[0;30;40m \033[0;30;47m'
-            if p == '10':  # upblock
-              __qr += u'\u2580'
-            if p == '01':  # downblock
-              __qr += u'\u2584'
-            if p == '00':  # white bg
-              __qr += ' '
-          __qr += ' \033[0m\n'
+      for i in range(0, len(qrA)):
+        if not (i % 2) == 0:
+          continue
+        __qr += '\033[0;30;47m '
+        for j in range(0, len(qrA[0])):
+          p = str(qrA[i][j]) + str(qrA[i + 1][j])
+          if p == '11':  # black bg
+            __qr += '\033[0;30;40m \033[0;30;47m'
+          if p == '10':  # upblock
+            __qr += u'\u2580'
+          if p == '01':  # downblock
+            __qr += u'\u2584'
+          if p == '00':  # white bg
+            __qr += ' '
+        __qr += ' \033[0m\n'
       return S_OK(__qr)
 
     with Halo('Authentification from %s.' % self.__piParams.provider) as spin:
-      spin.text = 'Authentification from %s.' % self.__piParams.provider
-
       # Get https endpoint of OAuthService API from http API of ConfigurationService
       confUrl = gConfig.getValue("/LocalInstallation/ConfigurationServerAPI")
       if not confUrl:
@@ -357,12 +354,12 @@ class ProxyInit(object):
         sys.exit('Cannot get link for authentication.')
       if authDict.get('Comment'):
         spinner.info(authDict['Comment'].strip())
-      spin.result = 'info'
+      spin.result = None
     
 
     if authDict['Status'] == 'needToAuth':
       if self.__piParams.session:
-        spinner.warn('Cannot authenticate throught %s session.', self.__piParams.session)
+        spinner.warn('Cannot authenticate throught %s session.' % self.__piParams.session)
         sys.exit(0)
       self.__piParams.session = newSession
       url = '%s/auth?getlink=%s' % (authAPI, self.__piParams.session)
@@ -370,15 +367,19 @@ class ProxyInit(object):
       if self.__piParams.addQRcode:
         result = qrterminal(url)
         if not result['OK']:
-          spinner.fail(result['Message'])
-        spinner.info('Scan QR code to continue: %s' % result['Value'])
-        spinner.text = 'Or use link: %s' % url
+          spinner.info(url)
+          spinner.color = 'red'
+          spinner.text = '%s Please use upper link.' % result['Message']
+        else:
+          spinner.info('Scan QR code to continue: %s' % result['Value'])
+          spinner.text = 'Or use link: %s' % url
       else:
-        spinner.text = 'Use link to continue: %s' % url
+        spinner.info(url)
+        spinner.text = 'Use upper link to continue:'
     
       # Try to open in default browser
       if webbrowser.open_new_tab(url):
-        spinner.text = 'Opening %s in default browser..' % url
+        spinner.text = '%s opening in default browser..' % url
     else:
       spinner.text = 'Use %s session for authenticate' % self.__piParams.session
 
