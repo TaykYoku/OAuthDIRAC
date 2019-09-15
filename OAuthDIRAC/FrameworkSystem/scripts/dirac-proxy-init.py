@@ -24,10 +24,12 @@ __RCSID__ = "$Id$"
 
 class Params(ProxyGeneration.CLIParams):
 
+  session = None
   provider = ''
   addEmail = False
   addQRcode = False
   addVOMSExt = False
+  addSession = False
   addProvider = False
   uploadProxy = False
   uploadPilot = False
@@ -50,6 +52,11 @@ class Params(ProxyGeneration.CLIParams):
     self.addVOMSExt = True
     return S_OK()
 
+  def setSession(self, arg):
+    self.session = arg
+    self.addSession = True
+    return S_OK()
+
   def setUploadProxy(self, _arg):
     self.uploadProxy = True
     return S_OK()
@@ -57,8 +64,9 @@ class Params(ProxyGeneration.CLIParams):
   def registerCLISwitches(self):
     ProxyGeneration.CLIParams.registerCLISwitches(self)
     Script.registerSwitch("U", "upload", "Upload a long lived proxy to the ProxyManager", self.setUploadProxy)
-    Script.registerSwitch("e:", "email:", "Send oauth authentification url on email", self.setEmail)
-    Script.registerSwitch("P:", "Provider:", "Set provider name for authentification", self.setProvider)
+    Script.registerSwitch("e:", "email=", "Send oauth authentification url on email", self.setEmail)
+    Script.registerSwitch("P:", "provider=", "Set provider name for authentification", self.setProvider)
+    Script.registerSwitch("", "session=", "Use exist authentication session", self.setSession)
     Script.registerSwitch("Q", "qrcode", "Print link as QR code", self.setQRcode)
     Script.registerSwitch("M", "VOMS", "Add voms extension", self.setVOMSExt)
     
@@ -254,15 +262,18 @@ class ProxyInit(object):
     import itertools
     import threading
     import webbrowser
+    import Cookie
 
+    from OAuthDIRAC.FrameworkSystem.Utilities.halo import Halo
+
+    authAPI = None
+    proxyAPI = None
+    spinner = Halo()
+    s = requests.Session()
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    #from halo import Halo
 
-    #@Halo(spinner='dots')
-    def restRequest(url=None, endpoint='', metod='GET', **kwargs):
+    def restRequest(url, endpoint='', metod='GET', **kwargs):
       """ Method to do http requests """
-      if not url or not kwargs:
-        return S_ERROR('Not arguments present.')
       __opts = None
       for key in kwargs:
         if kwargs[key]:
@@ -270,11 +281,10 @@ class ProxyInit(object):
             __opts = '%s=%s' % (key, kwargs[key])
           else:
             __opts += '&%s=%s' % (key, kwargs[key])
-      #self.spinner.fail()
       try:
-        r = requests.get('%s%s?%s' % (url, endpoint, __opts), verify=False)
+        r = s.get('%s%s?%s' % (url, endpoint, __opts), verify=False)
         r.raise_for_status()
-        return S_OK(r.json())
+        return S_OK(r)
       except requests.exceptions.Timeout:
         return S_ERROR('Time out')
       except requests.exceptions.RequestException as ex:
@@ -284,147 +294,160 @@ class ProxyInit(object):
       except BaseException as ex:
         return S_ERROR('Cannot read response: %s' % ex)
 
-    timeOut = 300
-    done = False
-
-    def loading():
-      """ Show loading string """
-      __start = time.time()
-      __runtime = 0
-      for c in itertools.cycle(['.*.            ', '..*            ', ' ..*           ',
-                                '  ..*          ', '   ..*         ', '    ..*        ',
-                                '     ..*       ', '      ..*      ', '       ..*     ',
-                                '        ..*    ', '         ..*   ', '          ..*  ',
-                                '           ..* ', '            ..*', '            .*.',
-                                '            *..', '           *.. ', '          *..  ',
-                                '         *..   ', '        *..    ', '       *..     ',
-                                '      *..      ', '     *..       ', '    *..        ',
-                                '   *..         ', '  *..          ', ' *..           ',
-                                '*..            ']):
-          __runtime = time.time() - __start
-          if done or __runtime > timeOut:
-            sys.stdout.write('\r                                                                   \n')
-            break
-          lefttime = (timeOut - __runtime) // 60
-          sys.stdout.write('\r Waiting %s minutes when you authenticated..' % lefttime + c)
-          sys.stdout.flush()
-          time.sleep(0.1)
-
     def qrterminal(url):
       """ Show QR code """
       try:
         import pyqrcode
       except Exception as ex:
-        gLogger.warn('pyqrcode library is not installed.')
-      else:
-        __qr = '\n'
-        qrA = pyqrcode.create(url).code
-        qrA.insert(0, [0 for i in range(0, len(qrA[0]))])
+        return S_ERROR('pyqrcode library is not installed.')
+      __qr = '\n'
+      qrA = pyqrcode.create(url).code
+      qrA.insert(0, [0 for i in range(0, len(qrA[0]))])
+      qrA.append([0 for i in range(0, len(qrA[0]))])
+      if not (len(qrA) % 2) == 0:
         qrA.append([0 for i in range(0, len(qrA[0]))])
-        if not (len(qrA) % 2) == 0:
-          qrA.append([0 for i in range(0, len(qrA[0]))])
-        for i in range(0, len(qrA)):
-          if not (i % 2) == 0:
-            continue
-          __qr += '\033[0;30;47m '
-          for j in range(0, len(qrA[0])):
-            p = str(qrA[i][j]) + str(qrA[i + 1][j])
-            if p == '11':  # black bg
-              __qr += '\033[0;30;40m \033[0;30;47m'
-            if p == '10':  # upblock
-              __qr += u'\u2580'
-            if p == '01':  # downblock
-              __qr += u'\u2584'
-            if p == '00':  # white bg
-              __qr += ' '
-          __qr += ' \033[0m\n'
-        gLogger.notice(__qr)
+      for i in range(0, len(qrA)):
+        if not (i % 2) == 0:
+          continue
+        __qr += '\033[0;30;47m '
+        for j in range(0, len(qrA[0])):
+          p = str(qrA[i][j]) + str(qrA[i + 1][j])
+          if p == '11':  # black bg
+            __qr += '\033[0;30;40m \033[0;30;47m'
+          if p == '10':  # upblock
+            __qr += u'\u2580'
+          if p == '01':  # downblock
+            __qr += u'\u2584'
+          if p == '00':  # white bg
+            __qr += ' '
+        __qr += ' \033[0m\n'
+      return S_OK(__qr)
 
-    gLogger.notice('Authentification from %s.' % self.__piParams.provider)
+    with Halo('Authentification from %s.' % self.__piParams.provider) as spin:
+      # Get https endpoint of OAuthService API from http API of ConfigurationService
+      confUrl = gConfig.getValue("/LocalInstallation/ConfigurationServerAPI")
+      if not confUrl:
+        sys.exit('Cannot get http url of configuration server.')
+      result = restRequest(confUrl, '/get', option='/Systems/Framework/Production/URLs/AuthAPI')
+      if not result['OK']:
+        sys.exit('Cannot get URL of authentication server:\n %s' % result['Message'])
+      authAPI = result['Value'].text
+      result = restRequest(confUrl, '/get', option='/Systems/Framework/Production/URLs/ProxyAPI')
+      if not result['OK']:
+        sys.exit('Cannot get URL of authentication server:\n %s' % result['Message'])
+      proxyAPI = result['Value'].text
 
-    # Get https endpoint of OAuthService API from http API of ConfigurationService
-    confUrl = gConfig.getValue("/LocalInstallation/ConfigurationServerAPI")
-    if not confUrl:
-      gLogger.fatal('Cannot get http url of configuration server.')
-      sys.exit(1)
-    res = restRequest(confUrl, '/get', **{'option': '/Systems/Framework/Production/URLs/OAuthAPI'})
-    if not res['OK']:
-      gLogger.fatal('Cannot get URL of authentication server:\n %s' % res['Message'])
-      sys.exit(1)
-    authAPI = res['Value']
+      # Submit authorization session
+      params = {'provider': self.__piParams.provider}
+      if self.__piParams.session:
+        params['state'] = self.__piParams.session
+      elif self.__piParams.addEmail:
+        params['email'] = self.__piParams.Email
+      result = restRequest(authAPI, '/auth', **params)
+      if not result['OK']:
+        sys.exit(result['Message'])
+      authDict = result['Value'].json()
+
+      # Create authorization link
+      newSession = authDict.get('Session')
+      if not newSession:
+        sys.exit('Cannot get link for authentication.')
+      if authDict.get('Comment'):
+        spinner.info(authDict['Comment'].strip())
+      spin.result = None
     
-    # Submit authorization session
-    params = {'provider': self.__piParams.provider}
-    if self.__piParams.addEmail:
-      params['email'] = self.__piParams.Email
-    res = restRequest(authAPI, '/auth', **params)
-    if not res['OK']:
-      gLogger.fatal(res['Message'])
-      sys.exit(1)
-    result = res['Value']
 
-    # Create authorization link
-    state = result['Value'].get('Session')
-    if not state:
-      gLogger.fatal('Cannot get link for authentication.')
-      sys.exit(1)
-
-    if result['Value']['Status'] == 'needToAuth':
-      url = '%s/auth?getlink=%s' % (authAPI, state)
-
-      # Output authentication link
-      if not webbrowser.open_new_tab(url):
-        if not result['OK']:
-          # Print link in output if it was not sent by email
-          if not self.__piParams.addEmail:
-            gLogger.fatal(result['Message'])
-            sys.exit(1)
-          gLogger.notice('Failed to send mail. URL to continue %s' % url)
-        elif self.__piParams.addEmail:
-          gLogger.notice('Mail was sent.')
-        else:
-          gLogger.notice('URL to continue %s' % url)
-      else:
-        gLogger.notice('Opening %s in browser..' % url)
-      
+    if authDict['Status'] == 'needToAuth':
+      if self.__piParams.session:
+        spinner.warn('Cannot authenticate throught %s session.' % self.__piParams.session)
+        sys.exit(0)
+      self.__piParams.session = newSession
+      url = '%s/auth?getlink=%s' % (authAPI, self.__piParams.session)
       # Show QR code
       if self.__piParams.addQRcode:
-        qrterminal(url)
+        result = qrterminal(url)
+        if not result['OK']:
+          spinner.info(url)
+          spinner.color = 'red'
+          spinner.text = '%s Please use upper link.' % result['Message']
+        else:
+          spinner.info('Scan QR code to continue: %s' % result['Value'])
+          spinner.text = 'Or use link: %s' % url
+      else:
+        spinner.info(url)
+        spinner.text = 'Use upper link to continue:'
+    
+      # Try to open in default browser
+      if webbrowser.open_new_tab(url):
+        spinner.text = '%s opening in default browser..' % url
+    else:
+      spinner.text = 'Use %s session for authenticate' % self.__piParams.session
 
-    # Loop: waiting status of request
-    threading.Thread(target=loading).start()
-    addVOMS = self.__piParams.addVOMSExt or Registry.getGroupOption(self.__piParams.diracGroup, "AutoAddVOMS", False)
-    res = restRequest(authAPI, '/status', status=state, group=self.__piParams.diracGroup,
-                      proxyLifeTime=self.__piParams.proxyLifeTime, voms=addVOMS,
-                      proxy=True, timeOut=timeOut)
-    done = True
-    time.sleep(1)
-    if not res['OK']:
-      gLogger.error(res['Message'])
-      sys.exit(1)
-    result = res['Value']
+    with spinner:
+      # Loop: waiting status of request
+      addVOMS = self.__piParams.addVOMSExt or Registry.getGroupOption(self.__piParams.diracGroup, "AutoAddVOMS", False)
+      __start = time.time()
+      __eNum = 0
+      while True:
+        time.sleep(5)
+        if time.time() - __start > 300:
+          sys.exit('Time out.')
 
-    # Read response result
-    if not result['OK']:
-      gLogger.error(result['Message'])
-      sys.exit(1)
-    if not result['Value']['Status'] == 'authed':
-      if result['Value']['Status'] == 'authed and reported':
-        gLogger.notice('Authenticated success. Administrators was notified about you.')
-      elif result['Value']['Status'] == 'visitor':
-        gLogger.notice('Authenticated success. You have permissions as Visitor.')
-      gLogger.notice(result['Value']['Comment'])
-      sys.exit(1)
+        result = restRequest(authAPI, '/status', status=self.__piParams.session)
+        if not result['OK']:
+          if __eNum < 3:
+            __eNum += 1
+            spinner.color = 'red'
+            continue
+          sys.exit(result['Message'])
+        statusDict = result['Value'].json()
+        if statusDict['Status'] == 'prepared':
+          spinner.color = 'green'
+          continue
+        if statusDict['Status'] == 'in progress':
+          spinner.text = '"%s" session %s' % (self.__piParams.session, statusDict['Status']) 
+          spinner.color = 'green'
+          continue
+        break
+
+      if statusDict['Status'] != 'authed':
+        if statusDict['Status'] == 'authed and reported':
+          spinner.warn('Authenticated success. Administrators was notified about you.')
+          sys.exit(0)
+        elif statusDict['Status'] == 'visitor':
+          spinner.warn('Authenticated success. You have permissions as Visitor.')
+          sys.exit(0)
+        sys.exit('Authentication failed.')
+      spinner.text = 'Authenticated success.'
+    
+    spinner.info(statusDict['Comment'].strip())
+    
+    with Halo(text='Downloading proxy'):
+      # Set provider and session to cookie
+      __domain = s.cookies.list_domains()[0]
+      s.cookies.set("TypeAuth", self.__piParams.provider, domain=__domain)
+      s.cookies.set("StateAuth", '{"%s":"%s"}' % (self.__piParams.provider,
+                                                  self.__piParams.session or ''), domain=__domain)
+      result = restRequest(proxyAPI, '/proxy', group=self.__piParams.diracGroup,
+                            lifetime=self.__piParams.proxyLifeTime, voms=addVOMS)
+      if not result['OK']:
+        sys.exit(result['Message'])
+      proxy = result['Value'].text
+      if not proxy:
+        sys.exit("Result is empty.")
 
     if not self.__piParams.proxyLoc:
       self.__piParams.proxyLoc = '/tmp/x509up_u%s' % os.getuid()
-    try:
-      with open(self.__piParams.proxyLoc, 'w') as fd:
-        fd.write(result['Value']['proxy'].encode("UTF-8"))
-      os.chmod(self.__piParams.proxyLoc, stat.S_IRUSR | stat.S_IWUSR)
-    except Exception as e:
-      return S_ERROR("%s :%s" % (self.__piParams.proxyLoc, repr(e).replace(',)', ')')))
-    self.__piParams.certLoc = self.__piParams.proxyLoc
+
+    with Halo(text='Saving proxy to %s' % self.__piParams.proxyLoc):
+      try:
+        with open(self.__piParams.proxyLoc, 'w') as fd:
+          fd.write(proxy.encode("UTF-8"))
+        os.chmod(self.__piParams.proxyLoc, stat.S_IRUSR | stat.S_IWUSR)
+      except Exception as e:
+        return S_ERROR("%s :%s" % (self.__piParams.proxyLoc, repr(e).replace(',)', ')')))
+      self.__piParams.certLoc = self.__piParams.proxyLoc
+    
     result = Script.enableCS()
     if not result['OK']:
       return S_ERROR("Cannot contact CS to get user list")

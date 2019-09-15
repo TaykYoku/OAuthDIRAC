@@ -7,9 +7,9 @@ import pprint
 
 from DIRAC import S_OK, S_ERROR, gLogger
 from DIRAC.Core.Security.X509Chain import X509Chain  # pylint: disable=import-error
+from DIRAC.Resources.IdProvider.IdProvider import IdProvider
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry
 
-from OAuthDIRAC.Resources.IdProvider.IdProvider import IdProvider
 from OAuthDIRAC.FrameworkSystem.Utilities.OAuth2 import OAuth2
 from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import OAuthManagerClient
 
@@ -68,6 +68,7 @@ class OAuth2IdProvider(IdProvider):
     if not result['OK']:
       return result
     responseD = result['Value']
+    self.log.debug('Got response dictionary:\n', pprint.pformat(responseD))
 
     resDict = {}
 
@@ -77,6 +78,7 @@ class OAuth2IdProvider(IdProvider):
     resDict['Tokens']['TokenType'] = responseD['Tokens'].get('token_type') or 'bearer'
     resDict['Tokens']['AccessToken'] = responseD['Tokens'].get('access_token')
     resDict['Tokens']['RefreshToken'] = responseD['Tokens'].get('refresh_token')
+    self.log.debug('Collect tokens information:\n', pprint.pformat(resDict['Tokens']))
 
     # Parse user name
     gname = responseD['UserProfile'].get('given_name')
@@ -85,6 +87,7 @@ class OAuth2IdProvider(IdProvider):
     name = responseD['UserProfile'].get('name') and responseD['UserProfile']['name'].split(' ')
     resDict['username'] = pname or gname and fname and gname[0] + fname or name and len(name) > 1 and name[0][0] + name[1] or ''
     resDict['username'] = re.sub('[^A-Za-z0-9]+', '', resDict['username'].lower())[:13]
+    self.log.verbose('Parse user name:', resDict['username'])
 
     # Collect user info
     resDict['UsrOptns'] = {}
@@ -93,10 +96,14 @@ class OAuth2IdProvider(IdProvider):
     if not resDict['UsrOptns']['ID']:
       return S_ERROR('No ID of user found.')
     resDict['UsrOptns']['Email'] = responseD['UserProfile'].get('email')
+    resDict['UsrOptns']['FullName'] = gname and fname and ' '.join([gname, fname]) or name and ' '.join(name) or ''
+    self.log.verbose('Parse user profile:\n', resDict['UsrOptns'])
+
+    # Default DIRAC groups
     resDict['UsrOptns']['Groups'] = self.parameters.get('DiracGroups') or []
     if not isinstance(resDict['UsrOptns']['Groups'], list):
       resDict['UsrOptns']['Groups'] = resDict['UsrOptns']['Groups'].replace(' ','').split(',')
-    resDict['UsrOptns']['FullName'] = gname and fname and ' '.join([gname, fname]) or name and ' '.join(name) or ''
+    self.log.verbose('Default for groups:', ', '.join(resDict['UsrOptns']['Groups']))
     
     # Get regex syntax to parse VOs info
     resDict['nosupport'] = []
@@ -112,6 +119,7 @@ class OAuth2IdProvider(IdProvider):
         claimVOList = claimVOList.split(',')
       
       # Parse claim info to find DIRAC groups
+      self.log.verbose('Parse VO VOMSes')
       result = Registry.getVOs()
       if not result['OK']:
         return result
@@ -148,14 +156,16 @@ class OAuth2IdProvider(IdProvider):
             resDict['UsrOptns']['Groups'].append(group)
           
           if __parse['ROLE'] not in roleGroup:
-            resDict['nosupport'].append(__parse['ROLE'])
-            continue
+            __parse['ROLE'] = __parse['ROLE'].replace('/Role=member', '')
+            if __parse['ROLE'] not in roleGroup:
+              resDict['nosupport'].append(__parse['ROLE'])
+              continue
 
           # Set groups with role
           for group in groupRole:
             if __parse['ROLE'] == groupRole[group]:
               resDict['UsrOptns']['Groups'].append(group)
-
+    resDict['nosupport'].sort()
     return S_OK(resDict)
 
   def getCredentials(self, kwargs):

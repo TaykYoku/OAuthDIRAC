@@ -75,7 +75,7 @@ class OAuthManagerHandler(RequestHandler):
     """
     return gOAuthDB.getSessionDict(conn, connDict)
 
-  type_updateSession = [dict, dict]
+  types_updateSession = [dict, dict]
 
   def export_updateSession(self, fieldsToUpdate, condDict):
     """ Update session record
@@ -119,94 +119,37 @@ class OAuthManagerHandler(RequestHandler):
         :return: S_OK(basestring)/S_ERROR()
     """
     return gOAuthDB.getLinkByState(state)
+  
+  types_getSessionStatus = [basestring]
 
-  types_waitStateResponse = [basestring, basestring, bool, basestring, int, int, int]
+  def export_getSessionStatus(self, session):
+    """ Listen DB to get status of auth and proxy if needed
+    """
+    return gOAuthDB.getStatusByState(session)
 
-  def export_waitStateResponse(self, state, group, needProxy, voms, proxyLifeTime, timeOut, sleepTime):
+  types_waitStateResponse = [basestring, int]
+
+  def export_waitStateResponse(self, session, timeOut):
     """ Listen DB to get status of auth and proxy if needed
 
-        :param basestring state: session number
-        :param basestring group: group name for proxy DIRAC group extentional
-        :param boolean needProxy: need proxy or not
-        :param basestring voms: voms name
-        :param int proxyLifeTime: requested proxy live time
+        :param basestring session: session number
         :param int timeOut: time in a seconds needed to wait result
-        :param int sleepTime: time needed to wait between requests
 
         :return: S_OK(dict)/S_ERROR
     """
     timeOut = timeOut > 300 and 300 or timeOut
-    sleepTime = sleepTime >= timeOut and timeOut - 1 or sleepTime
-    gLogger.notice(state, "session, waiting authorization status")
+    gLogger.notice(session, "session, waiting authorization status")
     start = time.time()
-    runtime = 0
-    for _i in range(int(timeOut // sleepTime)):
-      time.sleep(sleepTime)
-      runtime = time.time() - start
-      if runtime > timeOut:
-        gOAuthDB.killSession(state)
+    for _i in range(int(timeOut // 5)):
+      result = gOAuthDB.getStatusByState(session)
+      time.sleep(5)
+      if (time.time() - start) > timeOut:
+        gOAuthDB.killSession(session)
         return S_ERROR('Timeout')
-      result = gOAuthDB.getStatusByState(state)
-      if not result['OK']:
-        return result
-      resD = result['Value']
-
-      # Looking status of OIDC authorization session
-      status = resD['Status']
-      gLogger.notice('%s session' % state, status)
-      if status in ['prepared', 'in progress']:
+      gLogger.verbose('%s session' % session, result['Value']['Status'])
+      if result['OK'] and result['Value']['Status'] in ['prepared', 'in progress']:
         continue
-      elif status in ['visitor', 'authed and reported']:
-        return S_OK(resD)
-      elif status == 'failed':
-        return S_ERROR(resD['Comment'])
-      elif status == 'authed':
-        if not needProxy:
-          return S_OK(resD)
-
-        # Need group to continue
-        gLogger.notice("%s session, try return proxy" % state)
-        if not group:
-          result = Registry.findDefaultGroupForUser(resD['UserName'])
-          if not result['OK']:
-            return result
-          group = result['Value']
-        elif group not in Registry.getGroupsForUser(resD['UserName'])['Value']:
-          return S_ERROR('%s group is not found for %s user.' % (group, resD['UserName']))
-        
-        # Get proxy to string
-        result = Registry.getDNForUsername(resD['UserName'])
-        if not result['OK']:
-          return S_ERROR('Cannot get proxy')
-        if not Registry.getGroupsForUser(resD['UserName'])['OK']:
-          return S_ERROR('Cannot get proxy')
-        for DN in result['Value']:
-          result = Registry.getDNProperty(DN, 'Groups')
-          if not result['OK']:
-            return S_ERROR('Cannot get proxy, %s' % result['Message'])
-          groupList = result['Value'] or []
-          if not isinstance(groupList, list):
-            groupList = groupList.split(', ')
-          if group in groupList:
-            if voms:
-              voms = Registry.getVOForGroup(group)
-              result = gProxyManager.downloadVOMSProxy(DN, group, requiredVOMSAttribute=voms,
-                                                       requiredTimeLeft=proxyLifeTime)
-            else:
-              result = gProxyManager.downloadProxy(DN, group, requiredTimeLeft=proxyLifeTime)
-            if result['OK']:
-              break
-        if not result['OK']:
-          gLogger.notice('Proxy was not created.')
-          return result
-        gLogger.notice('Proxy was created.')
-        result = result['Value'].dumpAllToString()
-        if not result['OK']:
-          return result
-        return S_OK({'Status': status, 'proxy': result['Value']})
-      else:
-        return S_ERROR('Not correct status of your request')
-    return S_ERROR('Timeout')
+      return result
 
   types_parseAuthResponse = [dict, basestring]
 

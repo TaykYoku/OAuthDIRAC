@@ -10,10 +10,9 @@ import pprint
 
 from requests import Session, exceptions
 
-from DIRAC import gLogger, S_OK, S_ERROR
+from DIRAC import gConfig, gLogger, S_OK, S_ERROR
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry
 from DIRAC.ConfigurationSystem.Client.Helpers.Resources import getInfoAboutProviders
-from DIRAC.ConfigurationSystem.Client.Utilities import getOAuthAPI
 
 __RCSID__ = "$Id$"
 
@@ -67,7 +66,7 @@ class OAuth2(Session):
         __optns[key] = value
 
     # Get redirect URL from CS
-    oauthAPI = getOAuthAPI('Production')
+    oauthAPI = gConfig.getValue("/Systems/Framework/Production/URLs/AuthAPI")
     if oauthAPI:
       redirect_uri = '%s/redirect' % oauthAPI
 
@@ -137,7 +136,7 @@ class OAuth2(Session):
     result = self.fetchToken(code)
     if not result['OK']:
       return result
-    self.log.info('RESPONSE:\n', pprint.pformat(result['Value']))
+    self.log.debug('Token RESPONSE:\n', pprint.pformat(result['Value']))
     oaDict['Tokens'] = result['Value']
 
     # Get user profile
@@ -145,13 +144,14 @@ class OAuth2(Session):
     if not result['OK']:
       return result
     oaDict['UserProfile'] = result['Value']
+    self.log.debug('User profile RESPONSE:\n', pprint.pformat(result['Value']))
 
     # Get tokens
     result = self.fetchToken(refreshToken=oaDict['Tokens']['refresh_token'])
     if not result['OK']:
       return result
     oaDict['Tokens'] = result['Value']
-    self.log.info('RESPONSE:\n', pprint.pformat(result['Value']))
+    self.log.debug('Token RESPONSE:\n', pprint.pformat(result['Value']))
 
     return S_OK(oaDict)
 
@@ -218,7 +218,8 @@ class OAuth2(Session):
     else:
       return S_ERROR('No authorization code or refresh token found.')
     try:
-      r = self.request('POST', self.parameters['token_endpoint'])
+      r = self.request('POST', self.parameters['token_endpoint'],
+                       headers={'Content-Type': 'application/x-www-form-urlencoded'})
       r.raise_for_status()
       return S_OK(r.json())
     except (self.exceptions.RequestException, ValueError) as e:
