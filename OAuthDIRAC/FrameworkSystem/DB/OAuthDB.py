@@ -323,7 +323,7 @@ class OAuthDB(DB):
       sessionDict['State'] = None
 
     # Check if proxy provider ready
-    __userDict = parseDict['UsrOptns'].copy()
+    __userDict = parseDict['UsrOptns']
     __userDict['UserName'] = parseDict['username']
     result = __pProvider.checkStatus(__userDict, sessionDict)
     if not result['OK']:
@@ -611,8 +611,39 @@ class OAuthDB(DB):
         :param dict sourceDict: parsed user parameters by previous authentication flow which
                initiate current
 
-        :return: S_OK(dict,basestring)/S_ERROR()
+        :return: S_OK(dict)/S_ERROR() -- contain merged dictionary
     """
+    def mergeDicts(baseDict, addDict):
+      """ Dictionary merger
+
+          :param dict baseDict: base dictionary
+          :param dict addDict: dictionary that need to add
+
+          :return tuple(dict, dict) -- contain merged and with difference dictionaries
+      """
+      diffDict = {}
+      for k, vAdd in addDict.items():
+        if vAdd:
+          if not isinstance(vAdd, list):
+            try:
+              vAdd = vAdd.split(', ')
+            except BaseException:
+              vAdd = [vAdd]
+          if k in baseDict.keys():
+            vBase = baseDict[k]
+            if not isinstance(vBase, list):
+              try:
+                vBase = vBase.split(', ')
+              except BaseException:
+                vBase = [vBase]
+            diff = list(set(vAdd) - set(vBase))
+            if diff:
+              diffDict[k] = diff
+              baseDict[k] = vBase + diff
+          else:
+            baseDict[k] = vAdd
+      return (baseDict, diffDict)
+
     self.log.info('Convert user profile to parameters dictionaries and user name that needed to modify CS')
     self.log.debug('Parse dictionary:\n', pprint.pformat(parseDict))
     self.log.debug('Source dictionary:\n', pprint.pformat(sourceDict))
@@ -643,7 +674,7 @@ class OAuthDB(DB):
       resDict['username'] = result['Value']
       result = Registry.getDNForUsername(resDict['username'])
       if not result['OK']:
-        return result['Message']
+        return result
       result = Registry.getUserDict(resDict['username'])
       if not result['OK']:
         return result
@@ -654,27 +685,10 @@ class OAuthDB(DB):
       resDict['UsrOptns']['Groups'] = result['Value']
       resDict['UserExist'] = 'Yes'
       self.log.debug('Found existed user "%s"' % resDict['username'],
-                    'with next profile\n: %s' % pprint.pformat(resDict['UsrOptns']))
-
+                     'with next profile\n: %s' % pprint.pformat(resDict['UsrOptns']))
 
       # Merge information existing user with in response
-      for k, vParse in parseDict['UsrOptns'].items():
-        if vParse:
-          if not isinstance(vParse, list):
-            try:
-              vParse = vParse.split(', ')
-            except BaseException:
-              vParse = [vParse]
-          if k in resDict['UsrOptns'].keys():
-            vRes = resDict['UsrOptns'][k]
-            if not isinstance(vRes, list):
-              try:
-                vRes = vRes.split(', ')
-              except BaseException:
-                vRes = [vRes]
-            resDict['UsrOptns'][k] = vRes + list(set(vParse) - set(vRes))
-          else:
-            resDict['UsrOptns'][k] = vParse
+      resDict['UsrOptns'], diffD = mergeDicts(resDict['UsrOptns'], parseDict['UsrOptns'])
 
     # If curret authentication initiated by previous flow
     if sourceDict:
@@ -688,24 +702,8 @@ class OAuthDB(DB):
       baseDict['nosupport'] = list(set(addDict['nosupport'] + baseDict['nosupport']))
 
       # User options
-      for k, vAdd in addDict['UsrOptns'].items():
-        if vAdd:
-          if not isinstance(vAdd, list):
-            try:
-              vAdd = vAdd.split(', ')
-            except BaseException:
-              vAdd = [vAdd]
-          if k in baseDict['UsrOptns'].keys():
-            vBase = baseDict['UsrOptns'][k]
-            if not isinstance(vBase, list):
-              try:
-                vBase = vBase.split(', ')
-              except BaseException:
-                vBase = [vBase]
-            baseDict['UsrOptns'][k] = vBase + list(set(vAdd) - set(vBase))
-          else:
-            baseDict['UsrOptns'][k] = vAdd
       resDict = baseDict.copy()
+      resDict['UsrOptns'], diffD = mergeDicts(resDict['UsrOptns'], addDict['UsrOptns'])
     
     # Convert to string all, but not "Groups"
     for k, v in resDict['UsrOptns'].items():
@@ -714,6 +712,7 @@ class OAuthDB(DB):
           resDict['UsrOptns'][k] = list(set(resDict['UsrOptns'][k]))
         else:
           resDict['UsrOptns'][k] = ', '.join(v)
+    resDict['AddedUsrOptns'] = diffD
     self.log.debug('User information merged:\n', pprint.pformat(resDict))
     return S_OK(resDict)
 
