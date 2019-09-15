@@ -7,9 +7,9 @@ import pprint
 
 from DIRAC import S_OK, S_ERROR, gLogger
 from DIRAC.Core.Security.X509Chain import X509Chain  # pylint: disable=import-error
+from DIRAC.Resources.IdProvider.IdProvider import IdProvider
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry
 
-from OAuthDIRAC.Resources.IdProvider.IdProvider import IdProvider
 from OAuthDIRAC.FrameworkSystem.Utilities.OAuth2 import OAuth2
 from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import OAuthManagerClient
 
