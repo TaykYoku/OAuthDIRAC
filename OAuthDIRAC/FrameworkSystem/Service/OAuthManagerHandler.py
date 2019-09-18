@@ -1,12 +1,8 @@
 """ The OAuth service provides a toolkit to authoticate throught OIDC session.
 """
-import time
-
 from DIRAC import gConfig, gLogger, S_OK, S_ERROR
 from DIRAC.Core.DISET.RequestHandler import RequestHandler
 from DIRAC.Core.Utilities.ThreadScheduler import gThreadScheduler
-from DIRAC.FrameworkSystem.Client.ProxyManagerClient import gProxyManager
-from DIRAC.ConfigurationSystem.Client.Helpers import Registry
 
 from OAuthDIRAC.FrameworkSystem.DB.OAuthDB import OAuthDB
 
@@ -51,18 +47,6 @@ class OAuthManagerHandler(RequestHandler):
       return S_ERROR('Cannot create authority request URL.')
     return result
 
-  types_checkToken = [basestring]
-  # FIXME: its needed?
-  def export_checkToken(self, token):
-    """ Check status of tokens, refresh and back dict.
-
-        :param basestring token: access token
-
-        :return: S_OK(dict)/S_ERROR()
-    """
-    gLogger.notice("Check token %s." % token)
-    return gOAuthDB.fetchToken(accessToken=token)
-
   types_getSessionDict = [basestring, dict]
 
   def export_getSessionDict(self, conn, connDict):
@@ -100,14 +84,14 @@ class OAuthManagerHandler(RequestHandler):
 
   types_killState = [basestring]
 
-  def export_killState(self, state):
+  def export_killState(self, session):
     """ Remove session
     
-        :param basestring state: session number
+        :param basestring session: session number
 
         :return: S_OK()/S_ERROR()
     """
-    return gOAuthDB.killSession(state)
+    return gOAuthDB.killSession(session)
 
   types_getLinkByState = [basestring]
 
@@ -126,30 +110,6 @@ class OAuthManagerHandler(RequestHandler):
     """ Listen DB to get status of auth and proxy if needed
     """
     return gOAuthDB.getStatusByState(session)
-
-  types_waitStateResponse = [basestring, int]
-
-  def export_waitStateResponse(self, session, timeOut):
-    """ Listen DB to get status of auth and proxy if needed
-
-        :param basestring session: session number
-        :param int timeOut: time in a seconds needed to wait result
-
-        :return: S_OK(dict)/S_ERROR
-    """
-    timeOut = timeOut > 300 and 300 or timeOut
-    gLogger.notice(session, "session, waiting authorization status")
-    start = time.time()
-    for _i in range(int(timeOut // 5)):
-      result = gOAuthDB.getStatusByState(session)
-      time.sleep(5)
-      if (time.time() - start) > timeOut:
-        gOAuthDB.killSession(session)
-        return S_ERROR('Timeout')
-      gLogger.verbose('%s session' % session, result['Value']['Status'])
-      if result['OK'] and result['Value']['Status'] in ['prepared', 'in progress']:
-        continue
-      return result
 
   types_parseAuthResponse = [dict, basestring]
 
