@@ -1,8 +1,7 @@
 """ OAuth2
 
-    OAuth2 included all methods to work with OID providers.
+    OAuth2 included all methods to work with OIDC authentication flow.
 """
-
 import re
 import random
 import string
@@ -11,7 +10,6 @@ import pprint
 from requests import Session, exceptions
 
 from DIRAC import gConfig, gLogger, S_OK, S_ERROR
-from DIRAC.ConfigurationSystem.Client.Helpers import Registry
 from DIRAC.ConfigurationSystem.Client.Helpers.Resources import getInfoAboutProviders
 
 __RCSID__ = "$Id$"
@@ -19,7 +17,7 @@ __RCSID__ = "$Id$"
 
 class OAuth2(Session):
   def __init__(self, name=None,
-               scope=[], prompt=None,
+               scope=None, prompt=None,
                issuer=None, jwks_uri=None,
                client_id=None, redirect_uri=None,
                client_secret=None, proxy_endpoint=None,
@@ -59,16 +57,15 @@ class OAuth2(Session):
         self.log.warn('Cannot get settings remotely:' % result['Message'])
       elif isinstance(result['Value'], dict):
         __optns = result['Value']
-      #self.log.info('Loaded remote settings:\n', __optns)
 
     for d in [__csDict, kwargs]:
       for key, value in d.iteritems():
         __optns[key] = value
 
     # Get redirect URL from CS
-    oauthAPI = gConfig.getValue("/Systems/Framework/Production/URLs/AuthAPI")
-    if oauthAPI:
-      redirect_uri = '%s/redirect' % oauthAPI
+    authAPI = gConfig.getValue("/Systems/Framework/Production/URLs/AuthAPI")
+    if authAPI:
+      redirect_uri = '%s/redirect' % authAPI
 
     # Check client Id
     self.parameters['client_id'] = client_id or __optns.get('client_id')
@@ -79,7 +76,6 @@ class OAuth2(Session):
     self.parameters['scope'] = scope or __optns.get('scope') or []
     if not isinstance(self.parameters['scope'], list):
       self.parameters['scope'] = self.parameters['scope'].split(',')
-    self.parameters['scope'] += __optns.get('scopes_supported') or []
 
     # Init main OAuth2 options
     self.parameters['prompt'] = prompt or __optns.get('prompt')
@@ -94,7 +90,6 @@ class OAuth2(Session):
     self.parameters['registration_endpoint'] = registration_endpoint or __optns.get('registration_endpoint')
     self.parameters['authorization_endpoint'] = authorization_endpoint or __optns.get('authorization_endpoint')
     self.parameters['introspection_endpoint'] = introspection_endpoint or __optns.get('introspection_endpoint')
-    #self.log.info('Initialize:\n', pprint.pformat(self.parameters))
 
   def get(self, parameter):
     return self.parameters.get(parameter)
@@ -102,10 +97,11 @@ class OAuth2(Session):
   def createAuthRequestURL(self, state=None, **kwargs):
     """ Create link for authorization and state of authorization session
 
-        :param basestring,list `**kwargs`: OAuth2 parameters that will be added to request url,
-               e.g. **{authorization_endpoint='http://domain.ua/auth', scope=['openid','profile']}
+        :param basestring state: session number
+        :param `**kwargs`: OAuth2 parameters that will be added to request url,
+               e.g. authorization_endpoint='http://domain.ua/auth', scope=['openid','profile']
 
-        :return: S_OK(basestring url, basestring state)/S_ERROR()
+        :return: S_OK(dict)/S_ERROR() -- dict contain URL for authentication and session number
     """
     state = state or self.createState()
     self.log.info(state, 'session, generate URL for authetication.')
@@ -116,7 +112,7 @@ class OAuth2(Session):
     if self.parameters['prompt']:
       url += '&prompt=%s' % self.parameters['prompt']
     kwargs['redirect_uri'] = kwargs.get('redirect_uri') or self.parameters['redirect_uri']
-    kwargs['scope'] = kwargs.get('scope') or [] + self.parameters['scope']
+    kwargs['scope'] = kwargs.get('scope') or self.parameters['scope'] or self.parameters['scopes_supported']
     for key in kwargs:
       if isinstance(kwargs[key],list):
         kwargs[key] = '+'.join(kwargs[key])
@@ -158,7 +154,7 @@ class OAuth2(Session):
   def getUserProfile(self, accessToken):
     """ Get user profile
     
-        :param basestring access_token: access token
+        :param basestring accessToken: access token
 
         :return: S_OK(dict)/S_ERROR()
     """
@@ -175,8 +171,8 @@ class OAuth2(Session):
   def revokeToken(self, accessToken=None, refreshToken=None):
     """ Revoke token
     
-        :param basestring access_token: access token
-        :param basestring refresh_token: refresh token
+        :param basestring accessToken: access token
+        :param basestring refreshToken: refresh token
 
         :return: S_OK()/S_ERROR()
     """
@@ -191,7 +187,8 @@ class OAuth2(Session):
       try:
         self.request('POST', self.parameters['token_endpoint']).raise_for_status()
       except self.exceptions.RequestException as e:
-        return S_ERROR("%s: %s" % (e.message, r.text))
+        return S_ERROR("%s: %s" % (e.message, e.r.text))
+    return S_OK()
 
   def fetchToken(self, code=None, refreshToken=None):
     """ Update tokens
