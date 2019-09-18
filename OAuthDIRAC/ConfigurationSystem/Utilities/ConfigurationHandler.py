@@ -1,9 +1,7 @@
-""" HTTP API of the DIRAC configuration data
+""" HTTP API of the DIRAC configuration data, rewrite from RESTDIRAC project
 """
 
 import json
-import time
-import tornado
 
 from tornado import web, gen
 from tornado.template import Template
@@ -18,7 +16,7 @@ __RCSID__ = "$Id$"
 
 class ConfigurationHandler(WebHandler):
   AUTH_PROPS = "all"
-  LOCATION = "configuration"
+  LOCATION = "conf"
 
   def initialize(self):
     super(ConfigurationHandler, self).initialize()
