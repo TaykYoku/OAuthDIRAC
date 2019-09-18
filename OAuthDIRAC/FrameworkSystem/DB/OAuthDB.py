@@ -10,11 +10,9 @@ from datetime import datetime
 
 from DIRAC import gConfig, S_OK, S_ERROR
 from DIRAC.Core.Base.DB import DB
-from DIRAC.Core.Security.X509Chain import X509Chain  # pylint: disable=import-error
 from DIRAC.ConfigurationSystem.Client.CSAPI import CSAPI
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry
 from DIRAC.Resources.IdProvider.IdProviderFactory import IdProviderFactory
-from DIRAC.ConfigurationSystem.Client.Helpers.Resources import getInfoAboutProviders
 from DIRAC.Resources.ProxyProvider.ProxyProviderFactory import ProxyProviderFactory
 from DIRAC.FrameworkSystem.Client.NotificationClient import NotificationClient
 
@@ -370,7 +368,7 @@ class OAuthDB(DB):
     if not result['OK']:
       return result
     proxyDN = result['Value']
-    self.log.verbose(state, 'session, %s userDN from %s' % (proxyDN, __idPOfProxyProvider))
+    self.log.verbose(state, 'session, %s userDN from %s' % (proxyDN, proxyProviderName))
     # Add user DN to information dictionary
     if not parseDict['UsrOptns']['DN']:
       parseDict['UsrOptns']['DN'] = proxyDN
@@ -437,6 +435,8 @@ class OAuthDB(DB):
         comment += 'So, your profile has the same access that Visitor DIRAC user.'
         comment += notify and '\nOne more thing.. \n    ' + notify or ''
         return S_OK({'Status': 'visitor', 'Notify': comment})
+    elif not parseDict['AddedUsrOptns']:
+      return S_OK({'Status': 'authed', 'Notify': notify})
 
     # Add new user to CS or modify existed
     self.log.info("%s session, user parameters to add to CS: %s" % (state, pprint.pformat(parseDict['UsrOptns'])))
@@ -689,6 +689,7 @@ class OAuthDB(DB):
 
       # Merge information existing user with in response
       resDict['UsrOptns'], diffD = mergeDicts(resDict['UsrOptns'], parseDict['UsrOptns'])
+      resDict['AddedUsrOptns'] = diffD
 
     # If curret authentication initiated by previous flow
     if sourceDict:
@@ -704,6 +705,7 @@ class OAuthDB(DB):
       # User options
       resDict = baseDict.copy()
       resDict['UsrOptns'], diffD = mergeDicts(resDict['UsrOptns'], addDict['UsrOptns'])
+      resDict['AddedUsrOptns'] = diffD
     
     # Convert to string all, but not "Groups"
     for k, v in resDict['UsrOptns'].items():
@@ -712,7 +714,7 @@ class OAuthDB(DB):
           resDict['UsrOptns'][k] = list(set(resDict['UsrOptns'][k]))
         else:
           resDict['UsrOptns'][k] = ', '.join(v)
-    resDict['AddedUsrOptns'] = diffD
+    
     self.log.debug('User information merged:\n', pprint.pformat(resDict))
     return S_OK(resDict)
 
