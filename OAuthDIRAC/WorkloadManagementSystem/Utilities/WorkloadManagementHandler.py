@@ -1,8 +1,11 @@
-import re, os, shutil, tempfile
+""" Rewrite from RESTDIRAC project """
+import re
+import os
 import json
-import types
 import time
-import tornado
+import types
+import shutil
+import tempfile
 
 from tornado import web, gen
 
@@ -64,7 +67,31 @@ class WorkloadManagementHandler(WebHandler):
 
   @asyncGen
   def web_jobs(self):
-    """ Retrieve a list of jobs matching the requirements
+    """ Retrieve a list of jobs matching the requirements, use:
+        GET /jobs?<options> -- retrieve a list of jobs matching the requirements.
+          * options:
+            Any job attribute can also be defined as a restriction in a HTTP list form. For instance:
+              Site=DIRAC.Site.com&Site=DIRAC.Site2.com&Status=Waiting
+            * allOwners - show jobs from all owners instead of just the current user. By default is set to false.
+            * maxJobs - maximum number of jobs to retrieve. By default is set to 100.
+            * startJob - starting job for the query. By default is set to 0.
+          
+        GET /jobs/<jid> -- retrieve info about job with id=*jid*
+        GET /jobs/<jid>/manifest -- retrieve the job manifest
+        GET /jobs/<jid>/inputsandbox -- retrieve the job input sandbox
+        GET /jobs/<jid>/outputsandbox -- retrieve the job output sandbox
+          * jid - job identity number
+        
+        POST /jobs -- submit a job. The API expects a manifest to be sent as a JSON object.
+             Files can also be sent as a multipart request. If files are sent,
+             they will be added to the input sandbox and the manifest will be modified accordingly.
+             An example of manifest can be:
+              {Executable: "/bin/echo",
+               Arguments: "Hello World",
+               Sites: ["DIRAC.Site.com", "DIRAC.Site2.com"]}
+
+        DELETE /jobs/<jid> -- kill a job. The user has to have privileges over a job.
+          * jid - job identity number
     """
     optns = self.overpath.strip('/').split('/')
     if len(optns) > 2:
