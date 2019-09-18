@@ -20,16 +20,19 @@ try:
 except ImportError:
     from backports.shutil_get_terminal_size import get_terminal_size
 
-def colored(text, color=None, onColor=None, attrs=None):
+def coloredFrame(text, color=None, onColor=None, attrs=['bold']):
     """ Colorize text, while stripping nested ANSI color sequences.
+        Source: https://github.com/hfeeki/termcolor/blob/master/termcolor.py
         
         :param basestring text: text
         :param basestring color: text colors -> red, green, yellow, blue, magenta, cyan, white.
         :param basestring onColor: text highlights -> on_red, on_green, on_yellow, on_blue, on_magenta, on_cyan, on_white.
         :param list attrs: attributes -> bold, dark, underline, blink, reverse, concealed.
         --
-            colored('Hello, World!', 'red', 'on_grey', ['blue', 'blink'])
-            colored('Hello, World!', 'green')
+            coloredFrame('Hello, World!', 'red', 'on_grey', ['blue', 'blink'])
+            coloredFrame('Hello, World!', 'green')
+        
+        :return: basestring
     """
     ATTRIBUTES = dict(list(zip(['bold', 'dark', '', 'underline', 'blink', '', 'reverse', 'concealed'],
                   list(range(1, 9)))))
@@ -64,6 +67,7 @@ class StreamWrapper(object):
     """ Wraps a stream (such as stdout), acting as a transparent proxy for all
         attribute access apart from method 'write()', which is delegated to our
         Converter instance.
+        Source: https://github.com/tartley/colorama
     """
     def __init__(self, wrapped, converter):
         # double-underscore everything to prevent clashes with names of
@@ -108,6 +112,8 @@ class StreamWrapper(object):
 
 
 class PreWrapp(object):
+    """ Source: https://github.com/tartley/colorama
+    """
     def __init__(self, wrapped):
       if os.name == 'nt':
         raise BaseException('Not support')
@@ -160,16 +166,6 @@ def getEnvironment():
             return 'terminal'  # Other type (?)
     except NameError:
         return 'terminal'
-
-def coloredFrame(frame, color):
-    """ Color the frame with given color and returns.
-
-        :param basestring frame: Frame to be colored
-        :param basestring color: Color to be applied
-
-        :return: basestring -- Colored frame
-    """
-    return colored(frame, color, attrs=['bold'])
 
 def isTextType(text):
     """ Check if given parameter is a string or not
@@ -248,6 +244,7 @@ class Halo(object):
             :param boolean enabled: Spinner enabled or not.
             :param io stream: IO output.
         """
+        self._newline = None
         self._result = result
         self._color = color
         self._animation = animation
@@ -284,17 +281,10 @@ class Halo(object):
     def __exit__(self, eType, eValue, traceback):
         """ Stops the spinner. For use in context managers."""
         if eType:
-            if isinstance(eValue, SystemExit):
-                if eValue.code in [None, 0, 'succeed']:
-                    self.succeed()
-                elif eValue.message == 'warn':
-                    self.warn()
-                elif eValue.message == 'info':
-                    self.info()
-                elif eValue.message == 'stop':
-                    self.stop()
-                else:
-                    self.fail(eValue.message if isinstance(eValue.message, str) else None)
+            self._newline = False
+            self._text['original'] = ''
+            if isinstance(eValue, SystemExit) and eValue.code in [None, 0]:
+                self.succeed()
             else:
                 self.fail()
         elif self._result == 'succeed':
@@ -469,8 +459,8 @@ class Halo(object):
         """ Disable the user's blinking cursor
         """
         if self._checkStream() and self._stream.isatty():
-            # for sid in [signal.SIGINT, signal.SIGTSTP]:
-            #     signal.signal(sid, self._showCursor)
+            for sid in [signal.SIGINT, signal.SIGTSTP]:
+                signal.signal(sid, self._showCursor)
             if os.name == 'nt':
                 ci = _CursorInfo()
                 handle = ctypes.windll.kernel32.GetStdHandle(-11)
@@ -494,6 +484,8 @@ class Halo(object):
             elif os.name == 'posix':
                 sys.stdout.write("\033[?25h")
                 sys.stdout.flush()
+        if args:
+            raise SystemExit(args[0])
 
     def _getText(self, text):
         """ Creates frames based on the selected animation
@@ -600,7 +592,7 @@ class Halo(object):
             return self
         if not (self.enabled and self._checkStream()):
             return self
-        #self._hideCursor()
+        self._hideCursor()
         self._stopSpinner = threading.Event()
         self._spinnerThread = threading.Thread(target=self.render)
         self._spinnerThread.setDaemon(True)
@@ -669,7 +661,8 @@ class Halo(object):
         text = decodeUTF8Text(text) if text is not None else self._text['original']
         symbol = coloredFrame(symbol, self._color) if self._color and symbol else symbol
         text = coloredFrame(text, self._textColor) if self._textColor and text else text.strip()
-        output = u'{0} {1}\n'.format(*[(text, symbol) if self._placement == 'right' else (symbol, text)][0])
+        output = u'{0} {1}'.format(*[(text, symbol) if self._placement == 'right' else (symbol, text)][0])
+        output += '' if self._newline == False else '\n'
         try:
             self._write(output)
         except UnicodeEncodeError:
