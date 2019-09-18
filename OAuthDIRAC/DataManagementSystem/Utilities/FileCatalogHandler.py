@@ -1,5 +1,5 @@
+""" Rewrite from RESTDIRAC project """
 import re
-import json
 import types
 import base64
 
@@ -27,7 +27,13 @@ class FileCatalogHandler(WebHandler):
   
   @asyncGen
   def web_directory(self):
-    """ Retrieve contents of the specified directory
+    """ Retrieve contents of the specified directory, use:
+        GET /filecatalogue/directory/<directory> -- retrieve contents of the specified directory.
+            Set parameter verbose to true to get extended information.
+        GET /filecatalogue/directory/<directory>/metadata -- retrieve metadata values for this directory compatible with the metadata condition.
+            Accepts metadata condition
+        GET /filecatalogue/directory/<directory>/search -- search from this directory subdirectories that match the requested metadata search.
+            Each directory will also have the amount of files it contains and their total size. Accepts metadata condition
     """
     optns = self.overpath.strip('/').split('/')
     if len(optns) > 2:
@@ -83,6 +89,8 @@ class FileCatalogHandler(WebHandler):
   def web_metadata(self):
     """ Retrieve all metadata keys with their type and possible values that are
           compatible with the metadata restriction. Accepts metadata condition:
+          GET /filecatalogue/metadata -- retrieve all metadata keys with their type and possible values
+              that are compatible with the metadata restriction. Accepts metadata condition
         
         :return: json with requested data
     """
@@ -109,7 +117,10 @@ class FileCatalogHandler(WebHandler):
   
   @asyncGen
   def web_file(self):
-    """ Get the file information
+    """ Get the file information, use:
+        GET /filecatalogue/file/<file>/attributes -- get the file information
+        GET /filecatalogue/file/<file>/metadata -- get the file metadata
+
     """
     optns = self.overpath.strip('/').split('/')
     if len(optns) > 2:
