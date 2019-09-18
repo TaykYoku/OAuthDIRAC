@@ -1,10 +1,8 @@
 """ Handler to serve the DIRAC proxy data
 """
 import re
-import json
 import time
 import base64
-import tornado
 
 from tornado import web, gen
 from tornado.template import Template
@@ -41,7 +39,18 @@ class ProxyHandler(WebHandler):
 
   @asyncGen
   def web_proxy(self):
-    """ Proxy management endpoint
+    """ Proxy management endpoint, use:
+          GET /proxy/<DN>?<options> -- retrieve proxy
+            * DN - user DN(optional)
+            * options:
+              * voms - VOMS name(optional)
+              * group - DIRAC group(optional)
+              * lifetime - requested proxy live time(optional)
+
+          GET /proxy/<DN>/metadata?<options> -- retrieve proxy metadata
+            * options:
+
+        :return: json
     """
     __dn, __obj = None, None
     optns = self.overpath.strip('/').split('/')
