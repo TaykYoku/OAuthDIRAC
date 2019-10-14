@@ -10,6 +10,7 @@ import pprint
 from requests import Session, exceptions
 
 from DIRAC import gConfig, gLogger, S_OK, S_ERROR
+from DIRAC.ConfigurationSystem.Client.Utilities import getAuthAPI
 from DIRAC.ConfigurationSystem.Client.Helpers.Resources import getInfoAboutProviders
 
 __RCSID__ = "$Id$"
@@ -63,9 +64,9 @@ class OAuth2(Session):
         __optns[key] = value
 
     # Get redirect URL from CS
-    authAPI = gConfig.getValue("/Systems/Framework/Production/URLs/AuthAPI")
+    authAPI = getAuthAPI()
     if authAPI:
-      redirect_uri = '%s/redirect' % authAPI
+      redirect_uri = '%s/auth/redirect' % authAPI.strip('/')
 
     # Check client Id
     self.parameters['client_id'] = client_id or __optns.get('client_id')
