@@ -39,7 +39,6 @@ class OAuth2ProxyProvider(ProxyProvider):
                  - 'Status' with ready to work status[ready, needToAuth]
                  - 'AccessTokens' with list of access token
     """
-    # FIXME: was chenged
     result = Registry.getUserNameForDN(userDN)
     if not result['OK']:
       return result
