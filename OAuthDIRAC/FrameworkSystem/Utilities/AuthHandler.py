@@ -9,13 +9,11 @@ from DIRAC import S_OK, S_ERROR, gConfig, gLogger
 from DIRAC.ConfigurationSystem.Client.Helpers import Resources
 from DIRAC.FrameworkSystem.Client.NotificationClient import NotificationClient
 
-from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import OAuthManagerClient
+from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import gSessionManager
 
 from WebAppDIRAC.Lib.WebHandler import WebHandler, asyncGen, WErr
 
 __RCSID__ = "$Id$"
-
-gOAuthCli = OAuthManagerClient()
 
 
 class AuthHandler(WebHandler):
@@ -40,13 +38,12 @@ class AuthHandler(WebHandler):
             * IdP - Identity provider name for authentication
             * options:
               * email - email to get authentcation URL(optional)
-              * state - session number(optional)
 
           GET /auth/<session> -- will redirect to authentication endpoint
           GET /auth/<session>/status -- retrieve session with status and describe
             * session - session number
 
-          GET /redirect?<options> -- redirect endpoint to catch authentication responce
+          GET /auth/redirect?<options> -- redirect endpoint to catch authentication responce
             * options - responce options
 
         :return: json
@@ -64,23 +61,20 @@ class AuthHandler(WebHandler):
     if idP:
       # Create new authenticate session
       self.log.info('Initialize "%s" authorization flow' % idP)
-      result = yield self.threadTask(gOAuthCli.submitAuthorizeFlow, idP, self.args.get('state'))
+      result = yield self.threadTask(gSessionManager.submitAuthorizeFlow, idP, self.get_cookie(idP))
       if not result['OK']:
         raise WErr(500, result['Message'])
-      if result['Value']['Status'] == 'needToAuth':
-        state = result['Value']['Session']
-        authAPI = gConfig.getValue("/Systems/Framework/Production/URLs/AuthAPI")
-        if not authAPI:
-          raise WErr(500, 'Cannot find redirect URL.')
+      if result['Value']['Status'] == 'ready':
+        self.set_cookie("TypeAuth", idP)
+      elif result['Value']['Status'] == 'needToAuth':
         if self.args.get('email'):
-          url = '%s/%s' % (authAPI, state)
           notify = yield self.threadTask(NotificationClient().sendMail, self.args['email'],
-                                          'Authentication throught %s' % idP,
-                                          'Please, go throught the link %s to authorize.' % url)
+                                         'Authentication throught %s' % idP,
+                                         'Please, go throught the link %s to authorize.' % result['Value']['URL'])
           if not notify['OK']:
             result['Value']['Comment'] = '%s\n%s' % (result['Value'].get('Comment') or '', notify['Message'])
-        self.log.notice('%s authorization session "%s" provider was created' % (state, idP))
-      elif result['Value']['Status'] != 'ready':
+        self.log.notice('%s authorization session "%s" provider was created' % (result['Value']['Session'], idP))
+      else:
         raise WErr(500, 'Not correct status "%s" of %s' % (result['Value']['Status'], idP))
       self.finishJEncode(result['Value'])
 
@@ -96,28 +90,29 @@ class AuthHandler(WebHandler):
       if not self.args.get('state'):
         raise WErr(404, '"state" argument is empty.')
       self.log.info(self.args['state'], 'session, parsing authorization response %s' % self.args)
-      result = yield self.threadTask(gOAuthCli.parseAuthResponse, self.args, self.args['state'])
+      result = yield self.threadTask(gSessionManager.parseAuthResponse, self.args, self.args['state'])
       if not result['OK']:
         raise WErr(500, result['Message'])
-      oDict = result['Value']
+
       t = Template('''<!DOCTYPE html>
         <html><head><title>Authetication</title>
           <meta charset="utf-8" /></head><body>
             %s <br>
             <script type="text/javascript"> 
-              if ("%s" != "") { window.open("%s","_self") }
-              else { window.close() }
+              // if ("s" != "") { window.open("s","_self") }
+              // else { window.close() }
+              window.close()
             </script>
           </body>
-        </html>''' % (oDict.get('Messages') or '', oDict.get('redirect') or '', oDict.get('redirect') or ''))
-      self.log.info('>>>REDIRECT:\n', oDict.get('redirect'))
+        </html>''' % result['Value'].get('Comment') or '')
+      self.log.info('>>>REDIRECT:\n', result['Value'].get('Comment') or '')
       self.finish(t.generate())
 
     elif session:
       if optns[-1] == session:
         # Redirect to authentication endpoint
-        self.log.info(session,' authorization session flow')
-        result = yield self.threadTask(gOAuthCli.getLinkByState, session)
+        self.log.info(session, 'authorization session flow.')
+        result = yield self.threadTask(gSessionManager.getLinkBySession, session)
         if not result['OK']:
           raise WErr(500, '%s session not exist or expired!' % session)
         self.log.notice('Redirect to', result['Value'])
@@ -125,10 +120,12 @@ class AuthHandler(WebHandler):
 
       elif optns[-1] == 'status':
         # Get session authentication status
-        self.log.notice('%s session, get status of authorization' % session)
-        result = yield self.threadTask(gOAuthCli.getSessionStatus, session)
+        self.log.info(session, 'session, get status of authorization.')
+        result = yield self.threadTask(gSessionManager.getSessionStatus, session)
         if not result['OK']:
           raise WErr(500, result['Message'])
+        self.set_cookie("TypeAuth", result['Value']['Provider'])
+        self.set_cookie(result['Value']['Provider'], session)
         self.finishJEncode(result['Value'])
 
       else:
