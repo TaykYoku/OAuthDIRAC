@@ -1,12 +1,13 @@
 """ HTTP API of the DIRAC configuration data, rewrite from RESTDIRAC project
 """
-
+import re
 import json
 
 from tornado import web, gen
 from tornado.template import Template
 
 from DIRAC import S_OK, S_ERROR, gConfig, gLogger
+from DIRAC.ConfigurationSystem.Client.Helpers import Resources, Registry
 from DIRAC.ConfigurationSystem.Client.ConfigurationData import gConfigurationData
 
 from WebAppDIRAC.Lib.WebHandler import WebHandler, asyncGen, WErr
@@ -15,8 +16,9 @@ __RCSID__ = "$Id$"
 
 
 class ConfigurationHandler(WebHandler):
+  OVERPATH = True
   AUTH_PROPS = "all"
-  LOCATION = "conf"
+  LOCATION = "/"
 
   def initialize(self):
     super(ConfigurationHandler, self).initialize()
@@ -29,40 +31,53 @@ class ConfigurationHandler(WebHandler):
     return S_OK()
 
   @asyncGen
-  def web_get(self):
-    """ Authentication endpoint, used to:
-          get configuration information, with arguments:
-           option - path to opinion with opinion name, e.g /DIRAC/Extensions
-           options - section path where need to get list of opinions
-           section - section path to get dict of all opinions, values there
-           sections - section path where need to get list of sections
-           version - client version
+  def web_conf(self):
+    """ Configuration endpoint, used to:
+          GET /conf/get?<options> -- get configuration information, with arguments
+            * options:
+              * fullCFG - to get dump of configuration
+              * option - option path to get option value
+              * options - section path to get list of options
+              * section - section path to get dict of all options/values there
+              * sections - section path to get list of sections there
+              * version - version of configuration that request information(optional)
+          
+          GET /conf/<helper method>?<arguments> -- get some information by using helpers methods
+            * helper method - helper method of configuration service
+            * arguments - arguments specifecly for every helper method
         
         :return: json with requested data
     """
     self.log.notice('Request configuration information')
+    optns = self.overpath.strip('/').split('/')
+    if not optns or len(optns) > 1:
+      raise WErr(404, "Wrone way")
+    
+    if optns[0] == 'get':
+      if 'version' in self.args and (self.args.get('version') or '0') >= gConfigurationData.getVersion():
+        self.finish()
 
-    if 'version' in self.args and (self.args.get('version') or '0') >= gConfigurationData.getVersion():
-      self.finish()
-
-    result = {}    
-    if 'fullCFG' in self.args:
-      remoteCFG = yield self.threadTask(gConfigurationData.getRemoteCFG)
-      result['Value'] = str(remoteCFG)
-    elif 'option' in self.args:
-      result = yield self.threadTask(gConfig.getOption, self.args['option'])
-    elif 'section' in self.args:
-      result = yield self.threadTask(gConfig.getOptionsDict, self.args['section'])
-    elif 'options' in self.args:
-      result = yield self.threadTask(gConfig.getOptions, self.args['options'])
-    elif 'sections' in self.args:
-      result = yield self.threadTask(gConfig.getSections, self.args['sections'])
-    else:
-      raise WErr(500, 'Invalid argument')
+      result = {}    
+      if 'fullCFG' in self.args:
+        remoteCFG = yield self.threadTask(gConfigurationData.getRemoteCFG)
+        result['Value'] = str(remoteCFG)
+      elif 'option' in self.args:
+        result = yield self.threadTask(gConfig.getOption, self.args['option'])
+      elif 'section' in self.args:
+        result = yield self.threadTask(gConfig.getOptionsDict, self.args['section'])
+      elif 'options' in self.args:
+        result = yield self.threadTask(gConfig.getOptions, self.args['options'])
+      elif 'sections' in self.args:
+        result = yield self.threadTask(gConfig.getSections, self.args['sections'])
+      else:
+        raise WErr(500, 'Invalid argument')
+    
+    elif any([optns[0] == m and re.match('^[a-z][A-z]+', m) for m in dir(Registry)]) and self.isRegisteredUser():
+      result = yield self.threadTask(getattr(Registry, optns[0]), **self.args)
 
     if not result['OK']:
       raise WErr(404, result['Message'])
-    self.finish(json.dumps(result['Value']) if isinstance(result['Value'], dict) else result['Value'])
+    self.finishJEncode(result['Value'])
 
   @asyncGen
   def post(self):
