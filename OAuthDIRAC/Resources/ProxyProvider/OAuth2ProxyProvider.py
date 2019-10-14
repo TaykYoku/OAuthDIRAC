@@ -8,9 +8,10 @@ from DIRAC import S_OK, S_ERROR, gLogger
 from DIRAC.Core.Security.X509Chain import X509Chain  # pylint: disable=import-error
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry
 from DIRAC.Resources.ProxyProvider.ProxyProvider import ProxyProvider
+from DIRAC.Resources.IdProvider.IdProviderFactory import IdProviderFactory
 
 from OAuthDIRAC.FrameworkSystem.Utilities.OAuth2 import OAuth2
-from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import OAuthManagerClient
+from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import gSessionManager
 
 __RCSID__ = "$Id$"
 
@@ -24,10 +25,10 @@ class OAuth2ProxyProvider(ProxyProvider):
   def setParameters(self, parameters):
     self.log = gLogger.getSubLogger('%s/%s' % (__name__, parameters['ProviderName']))
     self.parameters = parameters
-    self.oauth2 = OAuth2(parameters['IdProvider'])
-    self.oauth = OAuthManagerClient()
+    self.idProvider = None
+    self.oauth2 = None
   
-  def checkStatus(self, userDict=None, sessionDict=None):
+  def checkStatus(self, userDN):
     """ Read ready to work status of proxy provider
 
         :param dict userDict: user description dictionary with possible fields:
@@ -38,82 +39,19 @@ class OAuth2ProxyProvider(ProxyProvider):
                  - 'Status' with ready to work status[ready, needToAuth]
                  - 'AccessTokens' with list of access token
     """
-    __params = {}
-    __params['Provider'] = self.parameters['IdProvider']
-    __conn = " Status IN ( 'authed', 'in progress' ) "
-    
-    # We need access token to continue
-    sessionDict = not sessionDict and userDict or sessionDict or {}
-    accessTokens = sessionDict.get('AccessToken') and [sessionDict['AccessToken']] or []
-    if not self.parameters['IdProvider'] == sessionDict.get('Provider'):
-      accessTokens = []
-    if not accessTokens:
-      if sessionDict.get('State'):
-        __params['State'] = sessionDict['State']
-      else:
-        dn = sessionDict.get('UserDN') or sessionDict.get('DN')
-        sub = sessionDict.get('Sub') or sessionDict.get('UserID') or sessionDict.get('ID')
-        userName = sessionDict.get('UserName') or sessionDict.get('username')
-        if userName:
-          __params['UserName'] = userName
-        if sub:
-          if isinstance(sub, list):
-            __conn += "AND Sub IN ( '%s' ) " % "', '".join(sub)
-          else:
-            __params['Sub'] = sub
-        elif dn:
-          if isinstance(dn, list):
-            __conn = "AND UserDN IN ( '%s' ) " % "', '".join(dn)
-          else:
-            __params['UserDN'] = dn
-        else:
-          return S_ERROR('No accses token token, session number, user DN found in request.')
-
-      # Search access tokens
-      self.log.verbose('Search active sessions..')
-      result = self.oauth.getSessionDict(__conn, __params)
-      if not result['OK']:
-        return result
-      sessions = result['Value']
-      self.log.debug('Found next sessions:\n', pprint.pformat(sessions))
-
-      # Trying to update every access token
-      accessTokens = []
-      for i in range(0, len(sessions)):
-        sessionDict = sessions[i]
-        if not sessionDict.get('AccessToken'):
-          continue
-        self.log.verbose('Try to use %s access token.' % sessionDict['AccessToken'])
-
-        # Check access token time left
-        timeLeft = 0
-        if isinstance(sessionDict['ExpiresIn'], datetime.datetime):
-          timeLeft = (sessionDict['ExpiresIn'] - sessionDict['TimeStamp']).total_seconds()
-        self.log.verbose('Left %s seconds of access token' % str(timeLeft))
-
-        if timeLeft < 1800:
-          # Refresh tokens
-          result = self.oauth2.fetchToken(refreshToken=sessionDict['RefreshToken'])
-          if not result['OK']:
-            self.log.error(result['Message'])
-            continue
-          tokensDict = result['Value']
-          self.log.verbose('Tokens of %s successfully updated.' % sessionDict['Provider'])
-          result = self.oauth.updateSession({'ExpiresIn': tokensDict.get('expires_in') or 0,
-                                             'TokenType': tokensDict['token_type'],
-                                             'AccessToken': tokensDict['access_token'],
-                                             'RefreshToken': tokensDict['refresh_token']},
-                                             {'AccessToken': sessionDict['AccessToken']})
-          if not result['OK']:
-            self.log.error(result['Message'])
-            continue
-          accessTokens.append(tokensDict['access_token'])
-        accessTokens.append(sessionDict['AccessToken'])
-    if not accessTokens:
-      return S_OK({'Status': 'needToAuth', 'IdP': self.parameters['IdProvider']})
-    return S_OK({'Status': 'ready', 'AccessTokens': accessTokens})
-
-  def getProxy(self, userDict=None, sessionDict=None, voms=None):
+    # FIXME: was chenged
+    result = Registry.getUserNameForDN(userDN)
+    if not result['OK']:
+      return result
+    self.userName = result['Value']
+    result = IdProviderFactory().getIdProvider(self.parameters['IdProvider'])
+    if not result['OK']:
+      return result
+    self.idProvider = result['Value']
+    self.oauth2 = OAuth2(self.parameters['IdProvider'])
+    return self.idProvider.checkStatus(self.userName)
+  
+  def getProxy(self, userDN):
     """ Generate user proxy with OIDC flow authentication
 
         :param dict userDict: user description dictionary with possible fields:
@@ -122,30 +60,42 @@ class OAuth2ProxyProvider(ProxyProvider):
 
         :return: S_OK/S_ERROR, Value is a proxy string
     """
-    sessionDict = not sessionDict and userDict or sessionDict or {}
-    result = self.checkStatus(sessionDict)
+    result = self.checkStatus(userDN)
     if not result['OK']:
       return result
-    if not result['Value']['Status'] == 'ready':
-      return S_ERROR('To get proxy need authentication.')
+    if result['Value']['Status'] == 'needToAuth':
+      return S_ERROR('To get proxy need authentication.', result['Value'])
+    elif result['Value']['Status'] != 'ready':
+      return S_ERROR('Some unexpexted status.')
 
-    # Get proxy request
-    for accessToken in result['Value']['AccessTokens']:
-      self.log.verbose('For proxy request use access token:', accessToken)
-      result = self.__getProxyRequest(accessToken, voms)
-      if result['OK']:
-        self.log.info('Proxy is taken')
-        break
+    for session in result['Value']['Sessions']:
+      self.log.verbose('For proxy request use session:', session)
+      # Get tokens
+      result = gSessionManager.getTokensBySession(session)
+      if not result['OK']:
+        return result
+      tokens = result['Value']
+
+      # Get proxy request
+      result = self.__getProxyRequest(tokens['AccessToken'])
+      if not result['OK']:
+        self.log.error(result['Message'])
+        # Refresh tokens
+        tokens['State'] = session
+        result = self.idProvider.fetchTokensAndUpdateSession(tokens)
+        if not result['OK']:
+          self.log.error(result['Message'])
+          continue
+        tokens = result['Value']
+
+        # Try to get proxy request again
+        result = self.__getProxyRequest(tokens['AccessToken'])
+        if not result['OK']:
+          self.log.error(result['Message'])
+          continue
       
-      # Kill session
-      res = self.oauth.getSessionDict('', {'AccessToken': accessToken, 'Provider': self.parameters['IdProvider']})
-      if not res['OK']:
-        return res
-      for i in range(0, len(res['Value'])):
-        state = res['Value'][i]['State']
-        res = self.oauth.killState(state)
-        if not res['OK']:
-          self.log.error('Cannot kill %s:' % state, res['Message'])
+      self.log.info('Proxy is taken')
+      break
 
     if not result['OK']:
       return result
@@ -164,82 +114,16 @@ class OAuth2ProxyProvider(ProxyProvider):
     DN = result['Value']['identity']
     return S_OK({'proxy': proxyStr, 'DN': DN})
 
-  def getUserDN(self, userDict=None, sessionDict=None, userDN=None):
-    """ Get DN of the user certificate that will be created
-
-        :param dict userDict: user description dictionary with possible fields:
-               FullName, UserName, DN, Email, DiracGroup
-        :param dict sessionDict: session dictionary
-
-        :return: S_OK/S_ERROR, Value is the DN string
-    """
-    gotDN = None
-    __conn = ''
-    __params = {}
-    __params['Status'] = "authed"
-    __params['Provider'] = self.parameters['IdProvider']
-
-    sessionDict = not sessionDict and userDict or sessionDict or {}
-    userName = sessionDict.get('UserName') or sessionDict.get('username')
-    if userName:
-      __params['UserName'] = userName
-    sub = sessionDict.get('Sub') or sessionDict.get('UserID') or sessionDict.get('ID')
-    if sub:
-      if isinstance(sub, list):
-        conn += "Sub IN ( '%s' ) " % "', '".join(sub)
-      else:
-        __params['Sub'] = sub
-      
-      # Search user DN in DB
-      result = self.oauth.getSessionDict(__conn, __params)
-      if not result['OK']:
-        return result
-      gotDN = result['Value'] and result['Value'][0].get('DN')
-
-    # Generate proxy and read user DN
-    if not gotDN:
-      self.log.info('Try to generate proxy.')
-      result = self.getProxy(sessionDict)
-      if not result['OK'] or not result['Value'].get('DN'):
-        return S_ERROR(result['Message'] or 'Cannot get user DN.')
-      gotDN = result['Value']['DN']
-    
-    # Check DN
-    if userDN and not userDN == gotDN:
-      return S_ERROR('%s is not match with DN %s that from genrated proxy' % (userDict['DN'], userDN))
-
-    return S_OK(gotDN)
-
-  def __getProxyRequest(self, accessToken, voms, **kwargs):
+  def __getProxyRequest(self, accessToken):
     """ Get user proxy from proxy provider
     
-        :param basestring access_token: access token that will be use to get proxy
-        :param basestring voms: VOMS name to get proxy with voms extentions
-        :param basestring,list `**kwargs`: OAuth2 parameters that will be added to request url,
-              e.g. **{authorization_endpoint='http://domain.ua/auth', scope=['openid','profile']}
+        :param basestring accessToken: access token
 
         :return: S_OK(basestring)/S_ERROR()
     """
-    kwargs = kwargs or {}
+    kwargs = {'access_token': accessToken}
     kwargs['access_type'] = 'offline'
-    kwargs['access_token'] = accessToken
-    kwargs['proxylifetime'] = self.parameters['MaxProxyLifetime']
-    if voms:
-      result = Registry.getVOs()
-      if not result['OK']:
-        return result
-      if voms not in result['Value']:
-        return S_ERROR('%s vo is not registred in DIRAC.' % voms)
-      result = Registry.getVOMSServerInfo(voms)
-      if not result['OK']:
-        return result
-      self.log.verbose('"%s" VOMS found' % voms)
-      vomsname = result['Value'][voms]['VOMSName']
-      hostname = result['Value'][voms]['Servers'][0]
-      hostDN = result['Value'][voms]['Servers'][hostname]['DN']
-      port = result['Value'][voms]['Servers'][hostname]['Port']
-      kwargs['vomses'] = '"%s" "%s" "%s" "%s" "%s"' % (vomsname, hostname, port, hostDN, vomsname)
-      kwargs['voname'] = vomsname
+    kwargs['proxylifetime'] = self.parameters['MaxProxyLifetime'] or 3600 * 24
     
     # Get proxy request
     self.log.verbose('Send proxy request to %s' % self.parameters['GetProxyEndpoint'])
