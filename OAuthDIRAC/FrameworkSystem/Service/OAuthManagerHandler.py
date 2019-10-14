@@ -3,8 +3,11 @@
 from DIRAC import gConfig, gLogger, S_OK, S_ERROR
 from DIRAC.Core.DISET.RequestHandler import RequestHandler
 from DIRAC.Core.Utilities.ThreadScheduler import gThreadScheduler
+from DIRAC.Core.Utilities.DictCache import DictCache
+from DIRAC.ConfigurationSystem.Client.Helpers import Registry
 
 from OAuthDIRAC.FrameworkSystem.DB.OAuthDB import OAuthDB
+from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import OAuthManagerClient
 
 __RCSID__ = "$Id$"
 
@@ -16,23 +19,53 @@ def initializeOAuthManagerHandler(serviceInfo):
     """
     global gOAuthDB
     gOAuthDB = OAuthDB()
-    result = gThreadScheduler.addPeriodicTask(3600, gOAuthDB.cleanZombieSessions)
     return S_OK()
 
 
 class OAuthManagerHandler(RequestHandler):
 
+  __IdPsIDsCache = DictCache()
+
+  # FIXME: Add fresh
+  @classmethod
+  def __refreshIdPsIDsCache(cls, idPs=None, IDs=None):
+    """ Update information about sessions
+
+        :param list idPs: list of identity providers that sessions need to update, if None - update all
+        :param list IDs: list of IDs that need to update, if None - update all
+
+        :return: S_OK()/S_ERROR()
+    """
+    result = gOAuthDB.updateIdPSessionsInfoCache(idPs=idPs, IDs=IDs)
+    if not result['OK']:
+      return result
+    for ID, infoDict in result['Value'].items():
+      cls.__IdPsIDsCache.add(ID, 3600 * 24, value=infoDict)
+    return result
+
   @classmethod
   def initializeOAuthManagerHandler(cls, serviceInfo):
     """ Handler initialization
     """
-    return S_OK()
+    gThreadScheduler.addPeriodicTask(3600, gOAuthDB.cleanZombieSessions)
+    gThreadScheduler.addPeriodicTask(3600 * 24, cls.__refreshIdPsIDsCache)
+    return cls.__refreshIdPsIDsCache()
 
   def initialize(self):
     """ Response initialization
     """
+  
+  types_getIdPsIDs = []
+  # FIXME: Add fresh check
+  def export_getIdPsIDs(self):
+    """ Return fresh info from identity providers about users with actual sessions
+
+        :return: S_OK(dict)/S_ERROR()
+    """
+    return S_OK(self.__IdPsIDsCache.getDict())
 
   types_submitAuthorizeFlow = [basestring]
+
   def export_submitAuthorizeFlow(self, providerName, session=None):
     """ Register new session and return dict with authorization url and session number
     
@@ -44,73 +77,9 @@ class OAuthManagerHandler(RequestHandler):
     gLogger.notice("Request to create authority URL for '%s'." % providerName)
     result = gOAuthDB.getAuthorization(providerName, session)
     if not result['OK']:
-      return S_ERROR('Cannot create authority request URL.')
+      return S_ERROR('Cannot create authority request URL:', result['Message'])
     return result
-
-  types_getSessionDict = [basestring, dict]
-
-  def export_getSessionDict(self, conn, connDict):
-    """ Get username by session number
-
-        :param basestring conn: search filter
-        :param dict connDict: parameters that need add to search filter
-
-        :return: S_OK(list(dict))/S_ERROR()
-    """
-    return gOAuthDB.getSessionDict(conn, connDict)
-
-  types_updateSession = [dict, dict]
-
-  def export_updateSession(self, fieldsToUpdate, condDict):
-    """ Update session record
-
-        :param dict fieldsToUpdate: fields content that need to update
-        :param dict condDict: parameters that need add to search filter
-
-        :return: S_OK()/S_ERROR()
-    """
-    return gOAuthDB.updateSession(fieldsToUpdate, condDict=condDict)
-
-  types_getUsrnameForState = [basestring]
-
-  def export_getUsrnameForState(self, state):
-    """ Get username by session number
-
-        :param basestring state: session number
-
-        :return: S_OK(dict)/S_ERROR()
-    """
-    return gOAuthDB.getUsrnameForState(state)
-
-  types_killState = [basestring]
-
-  def export_killState(self, session):
-    """ Remove session
-    
-        :param basestring session: session number
-
-        :return: S_OK()/S_ERROR()
-    """
-    return gOAuthDB.killSession(session)
-
-  types_getLinkByState = [basestring]
-
-  def export_getLinkByState(self, state):
-    """ Get authorization URL by session number
-
-        :param basestring state: session number
-
-        :return: S_OK(basestring)/S_ERROR()
-    """
-    return gOAuthDB.getLinkByState(state)
   
-  types_getSessionStatus = [basestring]
-
-  def export_getSessionStatus(self, session):
-    """ Listen DB to get status of auth and proxy if needed
-    """
-    return gOAuthDB.getStatusByState(session)
-
   types_parseAuthResponse = [dict, basestring]
 
   def export_parseAuthResponse(self, response, state):
@@ -121,10 +90,93 @@ class OAuthManagerHandler(RequestHandler):
         :param dict response: authorization response
         :param basestring state: session number
 
-        :return: S_OK(dict)/S_ERROR
+        :return: S_OK(dict)/S_ERROR()
     """
     gLogger.notice('%s session get response "%s"' % (state, response))
-    return gOAuthDB.parseAuthResponse(response, state)
+    result = gOAuthDB.parseAuthResponse(response, state)
+    if not result['OK']:
+      return result
+    if result['Value']['Status'] == 'authed':
+      refresh = self.__refreshIdPsIDsCache(idPs=None, IDs=[result['Value']['UserProfile']['UsrOptns']['ID']])
+      if not refresh['OK']:
+        return refresh
+      result['Value']['sessionIDDict'] = refresh['Value']
+    return result
+
+  types_updateSession = [basestring, dict]
+
+  def export_updateSession(self, session, fieldsToUpdate):
+    """ Update session record
+
+        :param basestring session: session number
+        :param dict fieldsToUpdate: fields content that need to update
+
+        :return: S_OK()/S_ERROR()
+    """
+    return gOAuthDB.updateSession(fieldsToUpdate, session=session)
+
+  types_killSession = [basestring]
+
+  def export_killSession(self, session):
+    """ Remove session record from DB
+    
+        :param basestring session: session number
+
+        :return: S_OK()/S_ERROR()
+    """
+    return gOAuthDB.killSession(session)
+
+  types_logOutSession = [basestring]
+
+  def export_logOutSession(self, session):
+    """ Remove session record from DB and logout form identity provider
+    
+        :param basestring session: session number
+
+        :return: S_OK()/S_ERROR()
+    """
+    return gOAuthDB.logOutSession(session)
+
+  types_getLinkBySession = [basestring]
+
+  def export_getLinkBySession(self, session):
+    """ Get authorization URL by session number
+
+        :param basestring session: session number
+
+        :return: S_OK(basestring)/S_ERROR()
+    """
+    return gOAuthDB.getLinkBySession(session)
+  
+  types_getSessionStatus = [basestring]
+
+  def export_getSessionStatus(self, session):
+    """ Listen DB to get status of authorization session
+
+        :param basestring session: session number
+
+        :return: S_OK(dict)/S_ERROR()
+    """
+    # FIXME: if authed return username
+    result = gOAuthDB.getStatusBySession(session)
+    if not result['OK']:
+      return result
+    if result['Value']['Status'] == 'authed':
+      user = Registry.getUsernameForID(result['Value']['ID'])
+      if user['OK']:
+        result['Value']['UserName'] = user['Value']
+    return result
+  
+  types_getSessionTokens = [basestring]
+
+  def export_getSessionTokens(self, session):
+    """ Get tokens by session number
+
+        :param basestring session: session number
+
+        :return: S_OK(dict)/S_ERROR()
+    """
+    return gOAuthDB.getTokensBySession(session)
 
   @staticmethod
   def __cleanOAuthDB():
