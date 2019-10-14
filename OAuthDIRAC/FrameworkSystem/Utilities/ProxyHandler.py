@@ -8,18 +8,12 @@ from tornado import web, gen
 from tornado.template import Template
 
 from DIRAC import S_OK, S_ERROR, gConfig, gLogger
-from DIRAC.FrameworkSystem.Client.NotificationClient import NotificationClient
-from DIRAC.ConfigurationSystem.Client.Utilities import getOAuthAPI
-from DIRAC.FrameworkSystem.Client.ProxyManagerClient import gProxyManager
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry
-
-from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import OAuthManagerClient
+from DIRAC.FrameworkSystem.Client.ProxyManagerClient import gProxyManager
 
 from WebAppDIRAC.Lib.WebHandler import WebHandler, asyncGen, WErr
 
 __RCSID__ = "$Id$"
-
-gOAuthCli = OAuthManagerClient()
 
 
 class ProxyHandler(WebHandler):
@@ -92,34 +86,22 @@ class ProxyHandler(WebHandler):
           raise WErr(500, '%s group is not found for %s user.' % (group, userName))
         
         # Get proxy to string
-        if not __dn:
-          result = Registry.getDNForUsername(userName)
-          if not result['OK']:
-            raise WErr(500, 'Cannot get proxy')
-          if not Registry.getGroupsForUser(userName)['OK']:
-            raise WErr(500, 'Cannot get proxy')
-          for DN in result['Value']:
-            result = Registry.getDNProperty(DN, 'Groups')
-            if not result['OK']:
-              raise WErr(500, 'Cannot get proxy, %s' % result['Message'])
-            groupList = result['Value'] or []
-            if not isinstance(groupList, list):
-              groupList = groupList.split(', ')
-            if group in groupList:
-              __dn = DN
-              break
+        result = Registry.getDNForUsernameInGroup(userName, group)
+        if not result['OK']:
+          raise WErr(500, result['Message'])
+        __dn = result['Value']
         if not __dn:
           raise WErr(500, 'No DN found for %s@%s' % (userName, group))
         if self.args.get('voms'):
           voms = Registry.getVOForGroup(group)
-          result = gProxyManager.downloadVOMSProxy(DN, group, requiredVOMSAttribute=voms,
+          result = gProxyManager.downloadVOMSProxy(__dn, group, requiredVOMSAttribute=voms,
                                                    requiredTimeLeft=proxyLifeTime)
         else:
-          result = gProxyManager.downloadProxy(DN, group, requiredTimeLeft=proxyLifeTime)
+          result = gProxyManager.downloadProxy(__dn, group, requiredTimeLeft=proxyLifeTime)
         if not result['OK']:
           raise WErr(500, result['Message'])
         self.log.notice('Proxy was created.')
         result = result['Value'].dumpAllToString()
         if not result['OK']:
           raise WErr(500, result['Message'])
-        self.finish(result['Value'])
+        self.finishJEncode(result['Value'])
