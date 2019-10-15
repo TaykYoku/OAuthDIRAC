@@ -82,21 +82,21 @@ class OAuthManagerHandler(RequestHandler):
   
   types_parseAuthResponse = [dict, basestring]
 
-  def export_parseAuthResponse(self, response, state):
+  def export_parseAuthResponse(self, response, session):
     """ Fill session by user profile, tokens, comment, OIDC authorize status, etc.
         Prepare dict with user parameters, if DN is absent there try to get it.
         Create new or modify existend DIRAC user and store the session
 
         :param dict response: authorization response
-        :param basestring state: session number
+        :param basestring session: session number
 
         :return: S_OK(dict)/S_ERROR()
     """
-    gLogger.notice('%s session get response "%s"' % (state, response))
-    result = gOAuthDB.parseAuthResponse(response, state)
+    gLogger.notice('%s session get response "%s"' % (session, response))
+    result = gOAuthDB.parseAuthResponse(response, session)
     if not result['OK']:
       return result
-    if result['Value']['Status'] == 'authed':
+    if result['Value']['Status'] in ['authed', 'redirect']:
       refresh = self.__refreshIdPsIDsCache(idPs=None, IDs=[result['Value']['UserProfile']['UsrOptns']['ID']])
       if not refresh['OK']:
         return refresh
