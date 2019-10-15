@@ -127,7 +127,7 @@ class OAuthManagerClient(Client):
     result = self._getRPC().parseAuthResponse(response, state)
     if not result['OK']:
       return result
-    if result['Value']['Status'] == 'authed':
+    if result['Value']['Status'] in ['authed', 'redirect']:
       refresh = self.refreshIdPs(sessionIDDict=result['Value']['sessionIDDict'])
       if not refresh['OK']:
         return refresh
