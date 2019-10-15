@@ -93,19 +93,19 @@ class AuthHandler(WebHandler):
       result = yield self.threadTask(gSessionManager.parseAuthResponse, self.args, self.args['state'])
       if not result['OK']:
         raise WErr(500, result['Message'])
-
+      comment = result['Value']['Comment']
+      status = result['Value']['Status']
       t = Template('''<!DOCTYPE html>
         <html><head><title>Authetication</title>
           <meta charset="utf-8" /></head><body>
             %s <br>
             <script type="text/javascript"> 
-              // if ("s" != "") { window.open("s","_self") }
-              // else { window.close() }
-              window.close()
+              if ("%s" == "redirect") { window.open("%s","_self") }
+              else { window.close() }
             </script>
           </body>
-        </html>''' % result['Value'].get('Comment') or '')
-      self.log.info('>>>REDIRECT:\n', result['Value'].get('Comment') or '')
+        </html>''' % (comment, status, comment))
+      self.log.info('>>>REDIRECT:\n', comment)
       self.finish(t.generate())
 
     elif session:
