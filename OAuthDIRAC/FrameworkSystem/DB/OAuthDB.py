@@ -70,6 +70,7 @@ class OAuthDB(DB):
 
     return self._createTables(tablesD)
 
+  # FIXME: Need to now about reseved
   def cleanZombieSessions(self):
     """ Kill sessions with old states
     
@@ -259,14 +260,81 @@ class OAuthDB(DB):
         comment = 'We not found any registred DIRAC groups that mached with your profile. '
         comment += 'So, your profile has the same access that Visitor DIRAC user.'
         comment += 'Your ID: 100492713487956493716'
+        result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'Status': status, 'Comment': comment},
+                                    session=session)
+        if not result['OK']:
+          return result
+        return S_OK((parseDict, status, comment, __mail))
 
     if not parseDict['Tokens'].get('RefreshToken'):
       return S_ERROR('No refresh token found in response.')
 
+    # If current session is session to reserve
+    if re.match('^reserved_.*', session):
+      # Update status in source session
+      result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'Status': status, 'Comment': comment},
+                                  session=session.replace('reserved_', ''))
+      if not result['OK']:
+        return result
+      # Update status in current session
+      result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'ExpiresIn': parseDict['Tokens']['ExpiresIn'], 
+                                   'TokenType': parseDict['Tokens']['TokenType'], 'AccessToken': parseDict['Tokens']['AccessToken'],
+                                   'RefreshToken': parseDict['Tokens']['RefreshToken'], 'Status': 'reserved', 'Comment': comment},
+                                  session=session)
+      if not result['OK']:
+        return result
+      return S_OK((parseDict, status, comment, __mail))
+
+    # If current session is not reserve, search reserved session
+    result = self._query('SELECT Session FROM `Sessions` WHERE ID="%s" AND Provider="%s"' % (parseDict['UsrOptns']['ID'],
+                                                                                             providerName))
+    if not result['OK']:
+      return result
+
+    if not any(re.match('^reserved_.*', s[0]) for s in result['Value']):
+      # If no found reserved session 
+      if status == 'authed':
+        # If current session will use, need to redirect to create reserved session
+        result = self.getAuthorization(providerName, session='reserved_%s' % session)
+        if not result['OK']:
+          return result
+        url = result['Value']['URL']
+        # Save tokens to current session
+        result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'ExpiresIn': parseDict['Tokens']['ExpiresIn'], 
+                                     'TokenType': parseDict['Tokens']['TokenType'], 'AccessToken': parseDict['Tokens']['AccessToken'],
+                                     'RefreshToken': parseDict['Tokens']['RefreshToken'], 'Status': 'redirect', 'Comment': comment},
+                                    session=session)
+        if not result['OK']:
+          return result
+        return S_OK((parseDict, 'redirect', url, __mail))
+
+      # If notified, its mean that current session will not use and we can reserve it
+      fillDict = {
+        'ID': parseDict['UsrOptns']['ID'],
+        'Status': 'reserved',
+        'Comment': '',
+        'Session': 'reserved_%s' % session,
+        'Provider': providerName,
+        'ExpiresIn': parseDict['Tokens']['ExpiresIn'],
+        'TokenType': parseDict['Tokens']['TokenType'],
+        'AccessToken': parseDict['Tokens']['AccessToken'],
+        'RefreshToken': parseDict['Tokens']['RefreshToken'],
+        'LastAccess': 'UTC_TIMESTAMP()'
+      }
+      result = self.insertFields('Sessions', fillDict.keys(), fillDict.values())
+      if not result['OK']:
+        return result
+      self.log.info(session, 'session was reserved')
+      result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'Status': status, 'Comment': comment},
+                                  session=session)
+      if not result['OK']:
+        return result
+      return S_OK((parseDict, status, comment, __mail))
+
     result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'ExpiresIn': parseDict['Tokens']['ExpiresIn'], 
                                  'TokenType': parseDict['Tokens']['TokenType'], 'AccessToken': parseDict['Tokens']['AccessToken'],
                                  'RefreshToken': parseDict['Tokens']['RefreshToken'], 'Status': status, 'Comment': comment},
-                                 session=session)
+                                session=session)
     if not result['OK']:
       return result
     return S_OK((parseDict, status, comment, __mail))
@@ -399,7 +467,6 @@ class OAuthDB(DB):
     if not resList and session:
       return S_ERROR('No %s session found.' % session)
     return S_OK(resList[0] if session else restList)
-
 
   # def prepareUserParameters(self, parseDict, sourceDict=None):
   #   """ Convert user profile to parameters dictionaries and user name that needed to modify CS:
