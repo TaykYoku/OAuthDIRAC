@@ -47,7 +47,7 @@ class OAuth2IdProvider(IdProvider):
         return result
       sessions += result['Value']
     if not sessions:
-      result = self.oauth2.createAuthRequestURL()
+      result = self.oauth2.createAuthRequestURL(session)
       if not result['OK']:
         return result
       result['Value']['Status'] = 'needToAuth'
