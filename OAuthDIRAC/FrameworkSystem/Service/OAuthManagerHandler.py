@@ -26,7 +26,6 @@ class OAuthManagerHandler(RequestHandler):
 
   __IdPsIDsCache = DictCache()
 
-  # FIXME:Lytov: Add fresh
   @classmethod
   def __refreshIdPsIDsCache(cls, idPs=None, IDs=None):
     """ Update information about sessions
@@ -157,7 +156,6 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    # FIXME:Lytov: if authed return username
     result = gOAuthDB.getStatusBySession(session)
     if not result['OK']:
       return result
