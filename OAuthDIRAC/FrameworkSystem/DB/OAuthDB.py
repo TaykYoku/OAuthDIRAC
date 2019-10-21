@@ -70,7 +70,7 @@ class OAuthDB(DB):
 
     return self._createTables(tablesD)
 
-  # FIXME: Need to now about reseved
+  # FIXME:Lytov: Need to now about reseved
   def cleanZombieSessions(self):
     """ Kill sessions with old states
     
@@ -538,7 +538,7 @@ class OAuthDB(DB):
   #         resDict['username'] = parseDict['username'] + str(i)
   #     resDict['UsrOptns'] = parseDict['UsrOptns']
   #   else:
-  #     # FIXME: If user exist need to save diff changes and allow to continue enter to DIRAC, but show warning
+  #     # FIXME:Lytov: If user exist need to save diff changes and allow to continue enter to DIRAC, but show warning
   #     resDict['username'] = result['Value']
   #     result = Registry.getDNForUsername(resDict['username'])
   #     if not result['OK']:

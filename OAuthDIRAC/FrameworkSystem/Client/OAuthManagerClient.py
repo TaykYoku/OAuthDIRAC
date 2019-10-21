@@ -10,7 +10,7 @@ from DIRAC.Core.DISET.RPCClient import RPCClient
 from DIRAC.Core.Utilities import DIRACSingleton
 from DIRAC.Core.Utilities.DictCache import DictCache
 
-# FIXME: Add cron every 15 min
+# FIXME:Lytov: Add cron every 15 min
 @createClient('Framework/OAuthManager')
 class OAuthManagerClient(Client):
   """ Authentication manager
@@ -78,7 +78,7 @@ class OAuthManagerClient(Client):
 
         :return: S_OK(dict)/S_ERROR() -- dictionary contain ID as key and information collected from IdP
     """
-    # FIXME: Howto fresh
+    # FIXME:Lytov: Howto fresh
     __IdPsCache = self.IdPsCache.getDict()
     if not IDs:
       return S_OK(__IdPsCache)
