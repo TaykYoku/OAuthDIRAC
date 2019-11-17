@@ -41,6 +41,16 @@ class OAuth2IdProvider(IdProvider):
       result = self.fetchTokensAndUpdateSession(session)
       if result['OK']:
         sessions += [session]
+      if sessions:
+        self.log.info('>>>>>>>>getIDForSession:')
+        result = gSessionManager.getIDForSession(sessions[0])
+        self.log.info('>>>>>>>>getIDForSession:', result)
+        if not result['OK']:
+          return result
+        result = Registry.getUsernameForID(result['Value'])
+        if not result['OK']:
+          return result
+        username = result['Value']
     if username:
       result = gSessionManager.getSessionsForUserNameProviderName(username, self.parameters['ProviderName'])
       if not result['OK']:
@@ -52,7 +62,8 @@ class OAuth2IdProvider(IdProvider):
         return result
       result['Value']['Status'] = 'needToAuth'
       return result
-    return S_OK({'Status': 'ready', 'Sessions': list(set(sessions))})
+    
+    return S_OK({'Status': 'ready', 'UserName': username, 'Sessions': list(set(sessions))})
 
   def parseAuthResponse(self, response):
     """ Make user info dict:
@@ -87,6 +98,15 @@ class OAuth2IdProvider(IdProvider):
     resDict['Tokens'] = result['Value']
     self.log.debug('Got response dictionary:\n', pprint.pformat(resDict))
     return S_OK(resDict)
+
+  def fetch(self, session):
+    """ Fetch session
+        
+        :param basestring,dict session: session number or dictionary
+
+        :return: S_OK()/S_ERROR()
+    """
+    return self.fetchTokensAndUpdateSession(session)
 
   def fetchTokensAndUpdateSession(self, session):
     """ Fetch tokens and update session in DB
@@ -164,7 +184,8 @@ class OAuth2IdProvider(IdProvider):
     if not isinstance(resDict['UsrOptns']['Groups'], list):
       resDict['UsrOptns']['Groups'] = resDict['UsrOptns']['Groups'].replace(' ','').split(',')
     self.log.debug('Default for groups:', ', '.join(resDict['UsrOptns']['Groups']))
-    
+    self.log.debug('Response Information:', pprint.pformat(userProfile))
+
 
     # FIXME:Lytov: parse DN:VO:Role:ProxyProvider to resDict['UsrOptns'][DNs] = []
 

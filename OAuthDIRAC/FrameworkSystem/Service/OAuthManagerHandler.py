@@ -1,13 +1,12 @@
 """ The OAuth service provides a toolkit to authoticate throught OIDC session.
 """
-from DIRAC import gConfig, gLogger, S_OK, S_ERROR
+from DIRAC import gLogger, S_OK, S_ERROR
 from DIRAC.Core.DISET.RequestHandler import RequestHandler
-from DIRAC.Core.Utilities.ThreadScheduler import gThreadScheduler
 from DIRAC.Core.Utilities.DictCache import DictCache
-from DIRAC.ConfigurationSystem.Client.Helpers import Registry
+from DIRAC.Core.Utilities.ThreadScheduler import gThreadScheduler
+from DIRAC.ConfigurationSystem.Client.Helpers.Registry import getUsernameForID
 
 from OAuthDIRAC.FrameworkSystem.DB.OAuthDB import OAuthDB
-from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import OAuthManagerClient
 
 __RCSID__ = "$Id$"
 
@@ -55,7 +54,6 @@ class OAuthManagerHandler(RequestHandler):
     """
   
   types_getIdPsIDs = []
-  # FIXME:Lytov: Add fresh check
   def export_getIdPsIDs(self):
     """ Return fresh info from identity providers about users with actual sessions
 
@@ -160,7 +158,7 @@ class OAuthManagerHandler(RequestHandler):
     if not result['OK']:
       return result
     if result['Value']['Status'] == 'authed':
-      user = Registry.getUsernameForID(result['Value']['ID'])
+      user = getUsernameForID(result['Value']['ID'])
       if user['OK']:
         result['Value']['UserName'] = user['Value']
     return result
