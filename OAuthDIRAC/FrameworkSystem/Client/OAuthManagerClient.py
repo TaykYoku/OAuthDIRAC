@@ -67,16 +67,12 @@ class OAuthManagerClient(Client):
       return S_OK()
 
     # Update cache from DB
-    for i in range(3):
-      result = self._getRPC().getIdPsIDs()
-      if result['OK']:
-        break
-      time.sleep(15)
-    resDict = result['Value'] if result['OK'] else {}
-    for ID, infoDict in resDict.items():
-      if len(infoDict['Providers']) > 1:
-        gLogger.warn('%s user ID used by more that one providers:' % ID, ', '.join(infoDict['Providers']))
-      self.IdPsCache.add(ID, 3600 * 24, infoDict)
+    result = self._getRPC().getIdPsIDs()
+    if result['OK']:
+      for ID, infoDict in result['Value'].items():
+        if len(infoDict['Providers']) > 1:
+          gLogger.warn('%s user ID used by more that one providers:' % ID, ', '.join(infoDict['Providers']))
+        self.IdPsCache.add(ID, 3600 * 24, infoDict)
     self.IdPsCache.add('Fresh', 60 * 15, value=True)
     return S_OK() if result['OK'] else result
   
