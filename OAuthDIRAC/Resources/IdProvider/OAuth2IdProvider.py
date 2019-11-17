@@ -42,9 +42,7 @@ class OAuth2IdProvider(IdProvider):
       if result['OK']:
         sessions += [session]
       if sessions:
-        self.log.info('>>>>>>>>getIDForSession:')
         result = gSessionManager.getIDForSession(sessions[0])
-        self.log.info('>>>>>>>>getIDForSession:', result)
         if not result['OK']:
           return result
         result = Registry.getUsernameForID(result['Value'])
@@ -52,10 +50,12 @@ class OAuth2IdProvider(IdProvider):
           return result
         username = result['Value']
     if username:
-      result = gSessionManager.getSessionsForUserNameProviderName(username, self.parameters['ProviderName'])
+      result = gSessionManager.getIdPsCache(Registry.getIDsForUsername(username))
       if not result['OK']:
         return result
-      sessions += result['Value']
+      for idDict in result['Value'].values():
+        if self.parameters['ProviderName'] in idDict:
+          sessions += idDict[self.parameters['ProviderName']].keys()
     if not sessions:
       result = self.oauth2.createAuthRequestURL(session)
       if not result['OK']:
