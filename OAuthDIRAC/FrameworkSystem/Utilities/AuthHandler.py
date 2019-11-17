@@ -60,8 +60,9 @@ class AuthHandler(WebHandler):
 
     if idP:
       # Create new authenticate session
-      self.log.info('Initialize "%s" authorization flow' % idP)
-      result = yield self.threadTask(gSessionManager.submitAuthorizeFlow, idP, self.get_cookie(idP))
+      session = self.get_cookie(idP)
+      self.log.info('Initialize "%s" authorization flow' % idP, 'with %s session' % session if session else '')
+      result = yield self.threadTask(gSessionManager.submitAuthorizeFlow, idP, session)
       if not result['OK']:
         raise WErr(500, result['Message'])
       if result['Value']['Status'] == 'ready':
