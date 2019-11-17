@@ -2,7 +2,7 @@
     by the OAuthManager service.
 """
 
-__RCSID__ = "$Id$"
+import time
 
 from DIRAC import gConfig, gLogger, S_OK, S_ERROR
 from DIRAC.Core.Base.Client import Client, createClient
@@ -10,7 +10,9 @@ from DIRAC.Core.DISET.RPCClient import RPCClient
 from DIRAC.Core.Utilities import DIRACSingleton
 from DIRAC.Core.Utilities.DictCache import DictCache
 
-# FIXME:Lytov: Add cron every 15 min
+__RCSID__ = "$Id$"
+
+
 @createClient('Framework/OAuthManager')
 class OAuthManagerClient(Client):
   """ Authentication manager
@@ -35,12 +37,13 @@ class OAuthManagerClient(Client):
             <DN2>: { ... },
           ]
         },
-        <ID1>: { ... },
+        <ID2>: { ... },
       }
   """
   __metaclass__ = DIRACSingleton.DIRACSingleton
 
   IdPsCache = DictCache()
+  refreshCount = 0
 
   def __init__(self, **kwargs):
     """ Constructor
@@ -50,26 +53,32 @@ class OAuthManagerClient(Client):
     self.refreshIdPs()
 
   def refreshIdPs(self, IDs=None, sessionIDDict=None):
-    """ Update cache from OAuthDB
+    """ Update cache from OAuthDB or dictionary
 
         :param list IDs: list of IDs
         :param dict sessionIDDict: session ID dictionary
 
         :return: S_OK()/S_ERROR()
-    """ 
+    """
+    # Update cache from dictionary
     if sessionIDDict:
       for ID, infoDict in sessionIDDict.items():
         self.IdPsCache.add(ID, 3600 * 24, value=infoDict)
       return S_OK()
 
-    result = self._getRPC().getIdPsIDs()
-    if not result['OK']:
-      return result
-    for ID, infoDict in result['Value'].items():
+    # Update cache from DB
+    for i in range(3):
+      result = self._getRPC().getIdPsIDs()
+      if result['OK']:
+        break
+      time.sleep(15)
+    resDict = result['Value'] if result['OK'] else {}
+    for ID, infoDict in resDict.items():
       if len(infoDict['Providers']) > 1:
         gLogger.warn('%s user ID used by more that one providers:' % ID, ', '.join(infoDict['Providers']))
       self.IdPsCache.add(ID, 3600 * 24, infoDict)
-    return S_OK()
+    self.IdPsCache.add('Fresh', 60 * 15, value=True)
+    return S_OK() if result['OK'] else result
   
   def getIdPsCache(self, IDs=None):
     """ Return IdPs cache
@@ -78,8 +87,15 @@ class OAuthManagerClient(Client):
 
         :return: S_OK(dict)/S_ERROR() -- dictionary contain ID as key and information collected from IdP
     """
-    # FIXME:Lytov: Howto fresh
+    # Update cache if not actual
+    if not self.IdPsCache.get('Fresh'):
+      result = self.refreshIdPs()
+      if not result['OK']:
+        return result
     __IdPsCache = self.IdPsCache.getDict()
+
+    # Return cache without Fresh key
+    __IdPsCache.pop('Fresh', None)
     if not IDs:
       return S_OK(__IdPsCache)
     resDict = {}
@@ -87,7 +103,7 @@ class OAuthManagerClient(Client):
       if ID in IDs:
         resDict[ID] = idDict
     return S_OK(resDict)
-  
+
   def getIDForSession(self, session):
     """ Find ID for session
     
@@ -95,24 +111,22 @@ class OAuthManagerClient(Client):
         
         :return: S_OK()/S_ERROR()
     """
-    for ID, infoDict in self.IdPsCache.getDict().items():
+    __IdPsCache = self.IdPsCache.getDict()
+    __IdPsCache.pop('Fresh', None)
+    for ID, infoDict in __IdPsCache.items():
+      for prov in infoDict['Providers']:
+        if session in infoDict[prov]:
+          return S_OK(ID)
+    result = self.refreshIdPs()
+    if not result['OK']:
+      return result
+    __IdPsCache = self.IdPsCache.getDict()
+    __IdPsCache.pop('Fresh', None)
+    for ID, infoDict in __IdPsCache.items():
       for prov in infoDict['Providers']:
         if session in infoDict[prov]:
           return S_OK(ID)
     return S_ERROR('No ID found for session %s' % session)
-  
-  def getProviderForSession(self, session):
-    """ Find identity provider for session
-    
-        :param basestring session: session number
-        
-        :return: S_OK()/S_ERROR()
-    """
-    for ID, infoDict in self.IdPsCache.getDict().items():
-      for prov in infoDict['Providers']:
-        if session in infoDict[prov]:
-          return S_OK(prov)
-    return S_ERROR('No provider found for session %s' % session)
 
   def parseAuthResponse(self, response, state):
     """ Fill session by user profile, tokens, comment, OIDC authorize status, etc.
