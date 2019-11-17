@@ -11,13 +11,11 @@ from datetime import datetime
 from DIRAC import gConfig, S_OK, S_ERROR, gLogger
 from DIRAC.Core.Base.DB import DB
 from DIRAC.ConfigurationSystem.Client.CSAPI import CSAPI
-from DIRAC.ConfigurationSystem.Client.Helpers import Registry
 from DIRAC.ConfigurationSystem.Client.Utilities import getAuthAPI
+from DIRAC.ConfigurationSystem.Client.Helpers.Registry import getGroupsForDN, getUsernameForID, getEmailsForGroup
 from DIRAC.Resources.IdProvider.IdProviderFactory import IdProviderFactory
 from DIRAC.Resources.ProxyProvider.ProxyProviderFactory import ProxyProviderFactory
 from DIRAC.FrameworkSystem.Client.NotificationClient import NotificationClient
-
-from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import OAuthManagerClient
 
 __RCSID__ = "$Id$"
 
@@ -69,23 +67,6 @@ class OAuthDB(DB):
       tablesD['Sessions'] = self.tableDict['Sessions']
 
     return self._createTables(tablesD)
-
-  # FIXME:Lytov: Need to now about reseved
-  def cleanZombieSessions(self):
-    """ Kill sessions with old states
-    
-        :return: S_OK(int)/S_ERROR()
-    """
-    result = self.__getFields(['Session'], conn='TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) > 43200')
-    if not result['OK']:
-      return result
-    sessions = result['Value']
-    self.log.info('Found %s old sessions for cleaning' % len(sessions))
-    for i in range(0, len(sessions)):
-      if sessions[i].get('Session'):
-        result = self.logOutSession(sessions[i]['Session'])
-        self.log.debug(result['Message'] or result['Value'])
-    return S_OK(len(sessions))
   
   def updateIdPSessionsInfoCache(self, idPs=None, IDs=None):
     """ Update cache with information about active session with identity provider
@@ -196,7 +177,7 @@ class OAuthDB(DB):
     parseDict, status, comment, mail = result['Value']
 
     if mail:
-      for addresses in Registry.getEmailsForGroup('dirac_admin'):
+      for addresses in getEmailsForGroup('dirac_admin'):
         result = NotificationClient().sendMail(addresses, mail['subject'], mail['body'], localAttempt=False)
         if not result['OK']:
           self.updateSession({'Status': 'failed', 'Comment': result['Message']}, session=session)
@@ -234,11 +215,11 @@ class OAuthDB(DB):
     status = 'authed'
     comment = ''
     __mail = {}
-    result = Registry.getUsernameForID(parseDict['UsrOptns']['ID'])
+    result = getUsernameForID(parseDict['UsrOptns']['ID'])
     if not result['OK']:
       groups = []
       for dn in parseDict['UsrOptns']['DNs'].keys():
-        result = Registry.getGroupsForDN(dn)
+        result = getGroupsForDN(dn)
         if not result['OK']:
           return result
         groups = list(set(groups + result['Value']))
@@ -375,6 +356,41 @@ class OAuthDB(DB):
         :return: S_OK(dict)/S_ERROR()
     """
     return self.__getFields(fields=['ID', 'Session', 'Status', 'Comment', 'Provider'], session=session)
+
+  def fetchReservedSessions(self):
+    """ Fetch reserved sessions
+
+        :return: S_OK(int)/S_ERROR()
+    """
+    result = self.__getFields(Status="reserved")
+    if not result['OK']:
+      return result
+    sessionsData = result['Value']
+    self.log.info('Found %s reserved sessions to fetch' % len(sessionsData))
+    for i in range(0, len(sessions)):
+      result = IdProviderFactory().getIdProvider(sessions[i]['Provider'])
+      if result['OK']:
+        providerObj = result['Value']
+        result = providerObj.fetch(sessions[i])
+
+  def cleanZombieSessions(self):
+    """ Kill sessions with old states
+    
+        :return: S_OK(int)/S_ERROR()
+    """
+    result = self.__getFields(['Session'], conn='TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) > 43200')
+    if not result['OK']:
+      return result
+    sessions = result['Value']
+    self.log.info('Found %s old sessions for cleaning' % len(sessions))
+    for i in range(0, len(sessions)):
+      # If its reserved session
+      if re.match('^reserved_.*', sessions[i]['Session']):
+        continue
+      if sessions[i].get('Session'):
+        result = self.logOutSession(sessions[i]['Session'])
+        self.log.debug(result['Message'] or result['Value'])
+    return S_OK(len(sessions))
 
   def killSession(self, session):
     """ Remove session
