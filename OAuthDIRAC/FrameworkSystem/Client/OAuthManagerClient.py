@@ -22,11 +22,10 @@ class OAuthManagerClient(Client):
         <ID1>: {
           Providers: [ <identity providers> ],
           <identity provider>: [
-              {
-                <sessions number>: { <tokens> }
-              },
-              { ... }
-            ]
+            {
+              <sessions number>: { <tokens> }
+            },
+            { ... }
           ],
           DNs: [
             <DN1>: {
@@ -43,7 +42,6 @@ class OAuthManagerClient(Client):
   __metaclass__ = DIRACSingleton.DIRACSingleton
 
   IdPsCache = DictCache()
-  refreshCount = 0
 
   def __init__(self, **kwargs):
     """ Constructor
@@ -67,13 +65,13 @@ class OAuthManagerClient(Client):
       return S_OK()
 
     # Update cache from DB
+    self.IdPsCache.add('Fresh', 60 * 15, value=True)
     result = self._getRPC().getIdPsIDs()
     if result['OK']:
       for ID, infoDict in result['Value'].items():
         if len(infoDict['Providers']) > 1:
           gLogger.warn('%s user ID used by more that one providers:' % ID, ', '.join(infoDict['Providers']))
         self.IdPsCache.add(ID, 3600 * 24, infoDict)
-    self.IdPsCache.add('Fresh', 60 * 15, value=True)
     return S_OK() if result['OK'] else result
   
   def getIdPsCache(self, IDs=None):
