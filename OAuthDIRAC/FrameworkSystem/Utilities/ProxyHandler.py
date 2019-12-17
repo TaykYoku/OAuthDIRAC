@@ -9,7 +9,7 @@ from tornado.template import Template
 
 from DIRAC import S_OK, S_ERROR, gConfig, gLogger
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry
-from DIRAC.FrameworkSystem.Client.ProxyManagerClient import gProxyManager
+from DIRAC.FrameworkSystem.Client.ProxyManagerClient import ProxyManagerClient
 
 from WebAppDIRAC.Lib.WebHandler import WebHandler, asyncGen, WErr
 
@@ -64,7 +64,7 @@ class ProxyHandler(WebHandler):
 
       # Return personal proxy
       elif not self.overpath:
-        result = gProxyManager.downloadPersonalProxy(self.getDN(), self.getUserGroup(), requiredTimeLeft=proxyLifeTime,
+        result = yield self.threadTask(ProxyManagerClient().downloadPersonalProxy, self.getDN(), self.getUserGroup(), requiredTimeLeft=proxyLifeTime,
                                                      vomsAttr=Registry.getVOForGroup(group) if voms else None)
         if not result['OK']:
           raise WErr(500, result['Message'])
@@ -99,10 +99,10 @@ class ProxyHandler(WebHandler):
         if not __dn:
           raise WErr(500, 'No DN found for %s@%s' % (username, group))
         if voms:
-          result = gProxyManager.downloadVOMSProxy(__dn, group, requiredVOMSAttribute=Registry.getVOForGroup(group),
-                                                   requiredTimeLeft=proxyLifeTime)
+          result = yield self.threadTask(ProxyManagerClient().downloadVOMSProxy, __dn, group, requiredVOMSAttribute=Registry.getVOForGroup(group),
+                                         requiredTimeLeft=proxyLifeTime)
         else:
-          result = gProxyManager.downloadProxy(__dn, group, requiredTimeLeft=proxyLifeTime)
+          result = yield self.threadTask(ProxyManagerClient().downloadProxy, __dn, group, requiredTimeLeft=proxyLifeTime)
         if not result['OK']:
           raise WErr(500, result['Message'])
         self.log.notice('Proxy was created.')
