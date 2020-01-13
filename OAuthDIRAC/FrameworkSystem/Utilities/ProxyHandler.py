@@ -56,6 +56,7 @@ class ProxyHandler(WebHandler):
     if re.match('[0-9]+', self.args.get('lifetime') or ''):
       proxyLifeTime = int(self.args.get('lifetime'))
     optns = self.overpath.strip('/').split('/')
+    
     # GET
     if self.request.method == 'GET':
       # Return content of Proxy DB
@@ -82,7 +83,7 @@ class ProxyHandler(WebHandler):
         # Get proxy to string
         result = getDNForUsernameInGroup(user, group)
         if not result['OK'] or not result.get('Value'):
-          raise WErr(500, '%s@%s has no registred DN: %s' % (user, group, result.get('Message') or "")
+          raise WErr(500, '%s@%s has no registred DN: %s' % (user, group, result.get('Message') or ""))
         
         if voms:
           result = yield self.threadTask(ProxyManagerClient().downloadVOMSProxy, user, group, requiredTimeLeft=proxyLifeTime)
