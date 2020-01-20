@@ -66,7 +66,7 @@ class ProxyHandler(WebHandler):
       # Return personal proxy
       elif not self.overpath:
         result = yield self.threadTask(ProxyManagerClient().downloadPersonalProxy, self.getUserName(),
-                                       self.getUserGroup(), requiredTimeLeft=proxyLifeTime, vomsAttr=voms)
+                                       self.getUserGroup(), requiredTimeLeft=proxyLifeTime, voms=voms)
         if not result['OK']:
           raise WErr(500, result['Message'])
         self.log.notice('Proxy was created.')
