@@ -207,7 +207,8 @@ class OAuth2IdProvider(IdProvider):
         result = __prog.match(item)
         if result:
           __parse = result.groupdict()
-          resDict['UsrOptns']['DNs'][__parse['DN']] = __parse
+          if __parse.get('DN'):
+            resDict['UsrOptns']['DNs'][__parse['DN']] = __parse
     return S_OK(resDict)
   
   def getUserProfile(self, session):
