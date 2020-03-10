@@ -6,6 +6,7 @@ import re
 import random
 import string
 import pprint
+# from oauthlib.oauth2 import WebApplicationClient
 
 from requests import Session, exceptions
 
@@ -98,32 +99,36 @@ class OAuth2(Session):
   def createAuthRequestURL(self, state=None, **kwargs):
     """ Create link for authorization and state of authorization session
 
-        :param basestring state: session number
+        :param str state: session number
         :param `**kwargs`: OAuth2 parameters that will be added to request url,
                e.g. authorization_endpoint='http://domain.ua/auth', scope=['openid','profile']
 
         :return: S_OK(dict)/S_ERROR() -- dict contain URL for authentication and session number
     """
-    state = state or self.createState()
-    self.log.info(state, 'session, generate URL for authetication.')
-    url = kwargs.get('authorization_endpoint') or self.parameters['authorization_endpoint']
-    if not url:
-      return S_ERROR('No found authorization endpoint.')
-    url += '?state=%s&response_type=code&client_id=%s&access_type=offline' % (state, self.parameters['client_id'])
-    if self.parameters['prompt']:
-      url += '&prompt=%s' % self.parameters['prompt']
+    # Fill arguments for preperation URL
+    kwargs['response_type'] = 'code'
+    kwargs['state'] = state or self.createState()
+    kwargs['client_id'] = self.parameters['client_id']
     kwargs['redirect_uri'] = kwargs.get('redirect_uri') or self.parameters['redirect_uri']
     kwargs['scope'] = kwargs.get('scope') or self.parameters['scope'] or self.parameters['scopes_supported']
-    for key in kwargs:
-      if isinstance(kwargs[key],list):
-        kwargs[key] = '+'.join(kwargs[key])
-      url += '&%s=%s' % (key, kwargs[key])
-    return S_OK({'URL': url, 'Session': state})
+    if self.parameters['prompt']:
+      kwargs['prompt'] = self.parameters['prompt']
+    
+    # Add IdP authorization endpoint
+    self.log.info(kwargs['state'], 'session, generate URL for authetication.')
+    url = (kwargs.get('authorization_endpoint') or self.parameters['authorization_endpoint']) + '?access_type=offline'
+    if not url:
+      return S_ERROR('No found authorization endpoint.')
+
+    # Add arguments
+    for key, value in kwargs.items():
+      url += '&%s=%s' % (key, '+'.join(list(set(v.strip() for v in value))) if isinstance(value, list) else value)
+    return S_OK({'URL': url, 'Session': kwargs['state']})
 
   def parseAuthResponse(self, code):
     """ Collecting information about user
     
-        :param basestring code: authorize code that come with response(authorize code flow)
+        :param str code: authorize code that come with response(authorize code flow)
 
         :result: S_OK(dict)/S_ERROR()
     """
@@ -155,7 +160,7 @@ class OAuth2(Session):
   def getUserProfile(self, accessToken):
     """ Get user profile
     
-        :param basestring accessToken: access token
+        :param str accessToken: access token
 
         :return: S_OK(dict)/S_ERROR()
     """
@@ -172,8 +177,8 @@ class OAuth2(Session):
   def revokeToken(self, accessToken=None, refreshToken=None):
     """ Revoke token
     
-        :param basestring accessToken: access token
-        :param basestring refreshToken: refresh token
+        :param str accessToken: access token
+        :param str refreshToken: refresh token
 
         :return: S_OK()/S_ERROR()
     """
@@ -194,8 +199,8 @@ class OAuth2(Session):
   def fetchToken(self, code=None, refreshToken=None):
     """ Update tokens
     
-        :param basestring code: authorize code that come with response(authorize code flow)
-        :param basestring refreshToken: refresh token
+        :param str code: authorize code that come with response(authorize code flow)
+        :param str refreshToken: refresh token
 
         :return: S_OK(dict)/S_ERROR()
     """
@@ -226,7 +231,7 @@ class OAuth2(Session):
   def createState(self):
     """ Generates a state string to be used in authorizations
     
-        :return: basestring
+        :return: str
     """
     return ''.join(random.choice(string.ascii_letters + string.digits) for x in range(30))
 
@@ -234,8 +239,8 @@ class OAuth2(Session):
     """ Returns OpenID Connect metadata related to the specified authorization server
         of provider, enough one parameter
 
-        :param basestring wellKnown: complete link to provider oidc configuration
-        :param basestring issuer: base URL of provider
+        :param str wellKnown: complete link to provider oidc configuration
+        :param str issuer: base URL of provider
 
         :return: S_OK(dict)/S_ERROR()
     """
