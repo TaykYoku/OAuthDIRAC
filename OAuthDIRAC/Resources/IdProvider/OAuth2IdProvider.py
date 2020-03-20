@@ -195,7 +195,7 @@ class OAuth2IdProvider(IdProvider):
     # Read regex syntax to get DNs describe dictionary
     dictItemRegex, listItemRegex = {}, None
     try:
-      dnInfoClaim = self.parameters['Syntax']['DNs']['claim']
+      dnClaim = self.parameters['Syntax']['DNs']['claim']
       for k, v in self.parameters['Syntax']['DNs'].items():
         if isinstance(v, dict) and v.get('item'):
           dictItemRegex[k] = v['item']
