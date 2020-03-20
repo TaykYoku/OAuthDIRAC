@@ -37,8 +37,9 @@ class OAuth2IdProvider(IdProvider):
                  - 'AccessToken' with list of access token
     """
     sessions = []
+
     if session:
-      result = self.fetchTokensAndUpdateSession(session)
+      result = self.fetchTokensAndUpdateSession(session) # TODO: need to first check tokens is active
       if result['OK']:
         sessions += [session]
       if sessions:
@@ -49,6 +50,7 @@ class OAuth2IdProvider(IdProvider):
         if not result['OK']:
           return result
         username = result['Value']
+
     if username:
       result = gSessionManager.getIdPsCache(Registry.getIDsForUsername(username))
       if not result['OK']:
@@ -92,7 +94,7 @@ class OAuth2IdProvider(IdProvider):
 
     for key, value in userProfile.items():
       resDict[key] = value
-    result = self.__fetchTokens(tokens)
+    result = self.__fetchTokens(tokens)  # TODO: remove here and first check AT & RT status
     if not result['OK']:
       return result
     resDict['Tokens'] = result['Value']
@@ -191,24 +193,42 @@ class OAuth2IdProvider(IdProvider):
 
 
     # Read regex syntax to get DNs describe dictionary
-    dnClaim = self.parameters.get('Syntax/DNs/claim')
-    dnItemRegex = self.parameters.get('Syntax/DNs/item')
-    if not dnClaim or not dnItemRegex and not resDict['UsrOptns']['Groups']:
-      self.log.warn('No "DiracGroups", no claim with DNs decsribe in Syntax/DNs section found.')
-    elif not userProfile.get(dnClaim) and not resDict['UsrOptns']['Groups']:
+    dictItemRegex, listItemRegex = {}, None
+    try:
+      dnInfoClaim = self.parameters['Syntax']['DNs']['claim']
+      for k, v in self.parameters['Syntax']['DNs'].items():
+        if isinstance(v, dict) and v.get('item'):
+          dictItemRegex[k] = v['item']
+        elif k == 'item':
+          listItemRegex = v
+    except Exception as e:
+      if not resDict['UsrOptns']['Groups']:
+        self.log.warn('No "DiracGroups", no claim with DNs decsribe in Syntax/DNs section found.')
+      return S_OK(resDict)
+    
+    if not userProfile.get(dnClaim) and not resDict['UsrOptns']['Groups']:
       self.log.warn('No "DiracGroups", no claim "%s" that decsribe DNs found.' % dnClaim)
     else:
-      claimDNsList = userProfile[dnClaim]
-      if not isinstance(claimDNsList, list):
-        claimDNsList = claimDNsList.split(',')
-      
-      __prog = re.compile(dnItemRegex)
-      for item in claimDNsList:
-        result = __prog.match(item)
-        if result:
-          __parse = result.groupdict()
-          if __parse.get('DN'):
-            resDict['UsrOptns']['DNs'][__parse['DN']] = __parse
+
+      if not isinstance(userProfile[dnClaim], list):
+        userProfile[dnClaim] = userProfile[dnClaim].split(',')
+
+      for item in userProfile[dnClaim]:
+        dnInfo = {}
+        for subClaim, reg in dictItemRegex.items():
+          result = re.compile(reg).match(item[subClaim])
+          if result:
+            for k, v in result.groupdict().items():
+              dnInfo[k] = v
+        if listItemRegex:
+          result = re.compile(listItemRegex).match(item)
+          if result:
+            for k, v in result.groupdict().items():
+              dnInfo[k] = v
+
+        if dnInfo.get('DN'):
+          resDict['UsrOptns']['DNs'][dnInfo['DN']] = dnInfo
+
     return S_OK(resDict)
   
   def getUserProfile(self, session):

@@ -1,6 +1,6 @@
 """ OAuth class is a front-end to the OAuth Database
 """
-
+#TODO: go to sqlalchemy
 import re
 import json
 import pprint
@@ -14,7 +14,7 @@ from DIRAC.ConfigurationSystem.Client.CSAPI import CSAPI
 from DIRAC.ConfigurationSystem.Client.Utilities import getAuthAPI
 from DIRAC.ConfigurationSystem.Client.Helpers.Registry import getGroupsForDN, getUsernameForID, getEmailsForGroup
 from DIRAC.Resources.IdProvider.IdProviderFactory import IdProviderFactory
-from DIRAC.Resources.ProxyProvider.ProxyProviderFactory import ProxyProviderFactory
+#from DIRAC.Resources.ProxyProvider.ProxyProviderFactory import ProxyProviderFactory
 from DIRAC.FrameworkSystem.Client.NotificationClient import NotificationClient
 
 __RCSID__ = "$Id$"
@@ -216,8 +216,9 @@ class OAuthDB(DB):
     comment = ''
     __mail = {}
     result = getUsernameForID(parseDict['UsrOptns']['ID'])
+    # TODO: if not user by ID, maybe look by DN
     if not result['OK']:
-      groups = []
+      groups = []  # TODO: find also groups by ID
       for dn in parseDict['UsrOptns']['DNs'].keys():
         result = getGroupsForDN(dn)
         if not result['OK']:
@@ -240,12 +241,12 @@ class OAuthDB(DB):
         status = 'visitor'
         comment = 'We not found any registred DIRAC groups that mached with your profile. '
         comment += 'So, your profile has the same access that Visitor DIRAC user.'
-        comment += 'Your ID: 100492713487956493716'
+        comment += 'Your ID: %s' % parseDict['UsrOptns']['ID']
         result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'Status': status, 'Comment': comment},
                                     session=session)
         if not result['OK']:
           return result
-        return S_OK((parseDict, status, comment, __mail))
+        return S_OK((parseDict, status, comment, __mail))  # TODO: i think here is bug (need backtab)
 
     if not parseDict['Tokens'].get('RefreshToken'):
       return S_ERROR('No refresh token found in response.')
@@ -303,15 +304,15 @@ class OAuthDB(DB):
         'LastAccess': 'UTC_TIMESTAMP()'
       }
       result = self.insertFields('Sessions', fillDict.keys(), fillDict.values())
-      if not result['OK']:
-        return result
-      self.log.info(session, 'session was reserved')
-      result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'Status': status, 'Comment': comment},
-                                  session=session)
+      if result['OK']:
+        self.log.info(session, 'session was reserved')
+        result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'Status': status, 'Comment': comment},
+                                    session=session)
       if not result['OK']:
         return result
       return S_OK((parseDict, status, comment, __mail))
 
+    # If reserved session exist
     result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'ExpiresIn': parseDict['Tokens']['ExpiresIn'], 
                                  'TokenType': parseDict['Tokens']['TokenType'], 'AccessToken': parseDict['Tokens']['AccessToken'],
                                  'RefreshToken': parseDict['Tokens']['RefreshToken'], 'Status': status, 'Comment': comment},
