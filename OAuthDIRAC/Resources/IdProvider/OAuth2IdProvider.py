@@ -188,10 +188,6 @@ class OAuth2IdProvider(IdProvider):
     self.log.debug('Default for groups:', ', '.join(resDict['UsrOptns']['Groups']))
     self.log.debug('Response Information:', pprint.pformat(userProfile))
 
-
-    # FIXME:Lytov: parse DN:VO:Role:ProxyProvider to resDict['UsrOptns'][DNs] = []
-
-
     # Read regex syntax to get DNs describe dictionary
     dictItemRegex, listItemRegex = {}, None
     try:
@@ -215,12 +211,13 @@ class OAuth2IdProvider(IdProvider):
 
       for item in userProfile[dnClaim]:
         dnInfo = {}
-        for subClaim, reg in dictItemRegex.items():
-          result = re.compile(reg).match(item[subClaim])
-          if result:
-            for k, v in result.groupdict().items():
-              dnInfo[k] = v
-        if listItemRegex:
+        if isinstance(item, dict):
+          for subClaim, reg in dictItemRegex.items():
+            result = re.compile(reg).match(item[subClaim])
+            if result:
+              for k, v in result.groupdict().items():
+                dnInfo[k] = v
+        elif listItemRegex:
           result = re.compile(listItemRegex).match(item)
           if result:
             for k, v in result.groupdict().items():
