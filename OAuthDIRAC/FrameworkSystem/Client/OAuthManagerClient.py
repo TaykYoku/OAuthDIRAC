@@ -27,14 +27,14 @@ class OAuthManagerClient(Client):
             },
             { ... }
           ],
-          DNs: [
+          DNs: {
             <DN1>: {
               ProxyProvider: [ <proxy providers> ],
               VOMSRoles: [ <VOMSRoles> ],
               ...
             },
             <DN2>: { ... },
-          ]
+          }
         },
         <ID2>: { ... },
       }
