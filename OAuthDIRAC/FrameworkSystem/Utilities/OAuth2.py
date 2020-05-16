@@ -12,7 +12,7 @@ from requests import Session, exceptions
 
 from DIRAC import gConfig, gLogger, S_OK, S_ERROR
 from DIRAC.ConfigurationSystem.Client.Utilities import getAuthAPI
-from DIRAC.ConfigurationSystem.Client.Helpers.Resources import getInfoAboutProviders
+from DIRAC.ConfigurationSystem.Client.Helpers.Resources import getProviderInfo
 
 __RCSID__ = "$Id$"
 
@@ -41,15 +41,10 @@ class OAuth2(Session):
     self.log = gLogger.getSubLogger("OAuth2/%s" % self.parameters['name'])
 
     # Get information from CS
-    result = S_OK()
-    for instance in (providerOfWhat and [providerOfWhat] or getInfoAboutProviders().get('Value') or []):
-      result = getInfoAboutProviders(of=instance, providerName=self.parameters['name'])
-      if result['OK']:
-        break
-    self.parameters['providerOfWhat'] = instance or None
+    result = getProviderInfo(self.parameters['name'])
     if not result['OK']:
       return result
-    __csDict = result.get('Value') or {}
+    __csDict = result['Value']
 
     # Get configuration from providers server
     self.parameters['issuer'] = issuer or kwargs.get('issuer') or __csDict.get('issuer')

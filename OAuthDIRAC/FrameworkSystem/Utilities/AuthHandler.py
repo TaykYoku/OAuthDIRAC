@@ -51,7 +51,7 @@ class AuthHandler(WebHandler):
     optns = self.overpath.strip('/').split('/')
     if not optns or len(optns) > 2:
       raise WErr(404, "Wrone way")
-    result = Resources.getInfoAboutProviders(of='Id')
+    result = Resources.getProvidersForInstance('Id')
     if not result['OK']:
       raise WErr(500, result['Message'])
     idPs = result['Value']
