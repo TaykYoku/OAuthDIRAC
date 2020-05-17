@@ -41,7 +41,7 @@ class OAuthManagerData(object):
   def __init__(self):
     """ Constructor
     """
-    IdPsCache = DictCache()
+    self.__IdPsCache = DictCache()
     self.refreshIdPs()
 
   def refreshIdPs(self, IDs=None, sessionIDDict=None):
@@ -55,18 +55,18 @@ class OAuthManagerData(object):
     # Update cache from dictionary
     if sessionIDDict:
       for ID, infoDict in sessionIDDict.items():
-        self.IdPsCache.add(ID, 3600 * 24, value=infoDict)
+        self.__IdPsCache.add(ID, 3600 * 24, value=infoDict)
       return S_OK()
 
     # Update cache from DB
-    self.IdPsCache.add('Fresh', 60 * 15, value=True)
+    self.__IdPsCache.add('Fresh', 60 * 15, value=True)
     rpcClient = RPCClient("Framework/OAuthManager", timeout=120)
     retVal = rpcClient.getIdPsIDs()
     if result['OK']:
       for ID, infoDict in result['Value'].items():
         if len(infoDict['Providers']) > 1:
           gLogger.warn('%s user ID used by more that one providers:' % ID, ', '.join(infoDict['Providers']))
-        self.IdPsCache.add(ID, 3600 * 24, infoDict)
+        self.__IdPsCache.add(ID, 3600 * 24, infoDict)
     return S_OK() if result['OK'] else result
   
   def getIdPsCache(self, IDs=None):
@@ -77,18 +77,18 @@ class OAuthManagerData(object):
         :return: S_OK(dict)/S_ERROR() -- dictionary contain ID as key and information collected from IdP
     """
     # Update cache if not actual
-    if not self.IdPsCache.get('Fresh'):
+    if not self.__IdPsCache.get('Fresh'):
       result = self.refreshIdPs()
       if not result['OK']:
         return result
-    __IdPsCache = self.IdPsCache.getDict()
+    idPsCache = self.__IdPsCache.getDict()
 
     # Return cache without Fresh key
-    __IdPsCache.pop('Fresh', None)
+    idPsCache.pop('Fresh', None)
     if not IDs:
-      return S_OK(__IdPsCache)
+      return S_OK(idPsCache)
     resDict = {}
-    for ID, idDict in __IdPsCache.items():
+    for ID, idDict in idPsCache.items():
       if ID in IDs:
         resDict[ID] = idDict
     return S_OK(resDict)
@@ -100,18 +100,18 @@ class OAuthManagerData(object):
         
         :return: S_OK()/S_ERROR()
     """
-    __IdPsCache = self.IdPsCache.getDict()
-    __IdPsCache.pop('Fresh', None)
-    for ID, infoDict in __IdPsCache.items():
+    idPsCache = self.__IdPsCache.getDict()
+    idPsCache.pop('Fresh', None)
+    for ID, infoDict in idPsCache.items():
       for prov in infoDict['Providers']:
         if session in infoDict[prov]:
           return S_OK(ID)
     result = self.refreshIdPs()
     if not result['OK']:
       return result
-    __IdPsCache = self.IdPsCache.getDict()
-    __IdPsCache.pop('Fresh', None)
-    for ID, infoDict in __IdPsCache.items():
+    idPsCache = self.__IdPsCache.getDict()
+    idPsCache.pop('Fresh', None)
+    for ID, infoDict in idPsCache.items():
       for prov in infoDict['Providers']:
         if session in infoDict[prov]:
           return S_OK(ID)
