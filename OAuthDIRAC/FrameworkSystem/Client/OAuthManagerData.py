@@ -61,7 +61,7 @@ class OAuthManagerData(object):
     # Update cache from DB
     self.__IdPsCache.add('Fresh', 60 * 15, value=True)
     rpcClient = RPCClient("Framework/OAuthManager", timeout=120)
-    retVal = rpcClient.getIdPsIDs()
+    result = rpcClient.getIdPsIDs()
     if result['OK']:
       for ID, infoDict in result['Value'].items():
         if len(infoDict['Providers']) > 1:
