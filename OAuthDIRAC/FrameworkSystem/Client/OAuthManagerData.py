@@ -3,11 +3,14 @@
 """
 
 from DIRAC import gLogger, S_OK, S_ERROR
-from DIRAC.Core.Utilities import DIRACSingleton
+from DIRAC.Core.Utilities import ThreadSafe, DIRACSingleton
 from DIRAC.Core.Utilities.DictCache import DictCache
 from DIRAC.Core.DISET.RPCClient import RPCClient
 
 __RCSID__ = "$Id$"
+
+
+gIdPsIDsSync = ThreadSafe.Synchronizer()
 
 
 class OAuthManagerData(object):
@@ -44,6 +47,7 @@ class OAuthManagerData(object):
     self.__IdPsCache = DictCache()
     self.refreshIdPs()
 
+  @gIdPsIDsSync
   def refreshIdPs(self, IDs=None, sessionIDDict=None):
     """ Update cache from OAuthDB or dictionary
 
@@ -60,8 +64,7 @@ class OAuthManagerData(object):
 
     # Update cache from DB
     self.__IdPsCache.add('Fresh', 60 * 15, value=True)
-    rpcClient = RPCClient("Framework/OAuthManager", timeout=120)
-    result = rpcClient.getIdPsIDs()
+    result = RPCClient("Framework/OAuthManager", timeout=120).getIdPsIDs()
     if result['OK']:
       for ID, infoDict in result['Value'].items():
         if len(infoDict['Providers']) > 1:
