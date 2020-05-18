@@ -13,7 +13,7 @@ __RCSID__ = "$Id$"
 
 class OAuthManagerHandler(RequestHandler):
 
-  gOAuthDB = None
+  __oauthDB = None
   __IdPsIDsCache = DictCache()
 
   @classmethod
@@ -25,7 +25,7 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK()/S_ERROR()
     """
-    result = gOAuthDB.updateIdPSessionsInfoCache(idPs=idPs, IDs=IDs)
+    result = cls.__oauthDB.updateIdPSessionsInfoCache(idPs=idPs, IDs=IDs)
     if not result['OK']:
       return result
     for ID, infoDict in result['Value'].items():
@@ -33,11 +33,11 @@ class OAuthManagerHandler(RequestHandler):
     return result
 
   @classmethod
-  def initializeOAuthManagerHandler(cls, serviceInfo):
+  def initializeHandler(cls, serviceInfo):
     """ Handler initialization
     """
-    cls.gOAuthDB = OAuthDB()
-    gThreadScheduler.addPeriodicTask(3600, gOAuthDB.cleanZombieSessions)
+    cls.__oauthDB = OAuthDB()
+    gThreadScheduler.addPeriodicTask(3600, cls.__oauthDB.cleanZombieSessions)
     gThreadScheduler.addPeriodicTask(3600 * 24, cls.__refreshIdPsIDsCache)
     return cls.__refreshIdPsIDsCache()
 
@@ -61,7 +61,7 @@ class OAuthManagerHandler(RequestHandler):
         :return: S_OK(dict)/S_ERROR()
     """
     gLogger.notice("Request to create authority URL for '%s'." % providerName)
-    result = gOAuthDB.getAuthorization(providerName, session)
+    result = self.__oauthDB.getAuthorization(providerName, session)
     if not result['OK']:
       return S_ERROR('Cannot create authority request URL:', result['Message'])
     return result
@@ -79,7 +79,7 @@ class OAuthManagerHandler(RequestHandler):
         :return: S_OK(dict)/S_ERROR()
     """
     gLogger.notice('%s session get response "%s"' % (session, response))
-    result = gOAuthDB.parseAuthResponse(response, session)
+    result = self.__oauthDB.parseAuthResponse(response, session)
     if not result['OK']:
       return result
     if result['Value']['Status'] in ['authed', 'redirect']:
@@ -99,7 +99,7 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK()/S_ERROR()
     """
-    return gOAuthDB.updateSession(fieldsToUpdate, session=session)
+    return self.__oauthDB.updateSession(fieldsToUpdate, session=session)
 
   types_killSession = [basestring]
 
@@ -110,7 +110,7 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK()/S_ERROR()
     """
-    return gOAuthDB.killSession(session)
+    return self.__oauthDB.killSession(session)
 
   types_logOutSession = [basestring]
 
@@ -121,7 +121,7 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK()/S_ERROR()
     """
-    return gOAuthDB.logOutSession(session)
+    return self.__oauthDB.logOutSession(session)
 
   types_getLinkBySession = [basestring]
 
@@ -132,7 +132,7 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(basestring)/S_ERROR()
     """
-    return gOAuthDB.getLinkBySession(session)
+    return self.__oauthDB.getLinkBySession(session)
   
   types_getSessionStatus = [basestring]
 
@@ -143,7 +143,7 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    result = gOAuthDB.getStatusBySession(session)
+    result = self.__oauthDB.getStatusBySession(session)
     if not result['OK']:
       return result
     if result['Value']['Status'] == 'authed':
@@ -161,7 +161,7 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    return gOAuthDB.getTokensBySession(session)
+    return self.__oauthDB.getTokensBySession(session)
 
   @staticmethod
   def __cleanOAuthDB():
@@ -170,7 +170,7 @@ class OAuthManagerHandler(RequestHandler):
         :return: S_OK()/S_ERROR()
     """
     gLogger.notice("Killing zombie sessions")
-    result = gOAuthDB.cleanZombieSessions()
+    result = self.__oauthDB.cleanZombieSessions()
     if not result['OK']:
       gLogger.error(result['Message'])
       return result
