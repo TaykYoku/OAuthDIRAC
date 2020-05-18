@@ -11,6 +11,7 @@ from DIRAC.Resources.IdProvider.IdProvider import IdProvider
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry
 
 from OAuthDIRAC.FrameworkSystem.Utilities.OAuth2 import OAuth2
+from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerData import gOAuthManagerData
 from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import gSessionManager
 
 __RCSID__ = "$Id$"
@@ -43,7 +44,7 @@ class OAuth2IdProvider(IdProvider):
       if result['OK']:
         sessions += [session]
       if sessions:
-        result = gSessionManager.getIDForSession(sessions[0])
+        result = gOAuthManagerData.getIDForSession(sessions[0])
         if not result['OK']:
           return result
         result = Registry.getUsernameForID(result['Value'])
@@ -52,7 +53,7 @@ class OAuth2IdProvider(IdProvider):
         username = result['Value']
 
     if username:
-      result = gSessionManager.getIdPsCache(Registry.getIDsForUsername(username))
+      result = gOAuthManagerData.getIdPsCache(Registry.getIDsForUsername(username))
       if not result['OK']:
         return result
       for idDict in result['Value'].values():

@@ -5,7 +5,6 @@
 from DIRAC import gLogger, S_OK, S_ERROR
 from DIRAC.Core.Utilities import ThreadSafe, DIRACSingleton
 from DIRAC.Core.Utilities.DictCache import DictCache
-from DIRAC.Core.DISET.RPCClient import RPCClient
 
 __RCSID__ = "$Id$"
 
@@ -64,7 +63,11 @@ class OAuthManagerData(object):
 
     # Update cache from DB
     self.__IdPsCache.add('Fresh', 60 * 15, value=True)
-    result = RPCClient("Framework/OAuthManager", timeout=120).getIdPsIDs()
+    try:
+      from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import gSessionManager
+    except Exception:
+      return S_ERROR('OAuthManager not ready.')
+    result = gSessionManager.getIdPsIDs()
     if result['OK']:
       for ID, infoDict in result['Value'].items():
         if len(infoDict['Providers']) > 1:

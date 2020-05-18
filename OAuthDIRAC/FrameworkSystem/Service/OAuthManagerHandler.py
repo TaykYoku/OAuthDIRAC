@@ -10,19 +10,10 @@ from OAuthDIRAC.FrameworkSystem.DB.OAuthDB import OAuthDB
 
 __RCSID__ = "$Id$"
 
-gOAuthDB = None
-
-
-def initializeOAuthManagerHandler(serviceInfo):
-    """ Handler initialization
-    """
-    global gOAuthDB
-    gOAuthDB = OAuthDB()
-    return S_OK()
-
 
 class OAuthManagerHandler(RequestHandler):
 
+  gOAuthDB = None
   __IdPsIDsCache = DictCache()
 
   @classmethod
@@ -45,15 +36,13 @@ class OAuthManagerHandler(RequestHandler):
   def initializeOAuthManagerHandler(cls, serviceInfo):
     """ Handler initialization
     """
+    cls.gOAuthDB = OAuthDB()
     gThreadScheduler.addPeriodicTask(3600, gOAuthDB.cleanZombieSessions)
     gThreadScheduler.addPeriodicTask(3600 * 24, cls.__refreshIdPsIDsCache)
     return cls.__refreshIdPsIDsCache()
 
-  def initialize(self):
-    """ Response initialization
-    """
-  
   types_getIdPsIDs = []
+
   def export_getIdPsIDs(self):
     """ Return fresh info from identity providers about users with actual sessions
 
