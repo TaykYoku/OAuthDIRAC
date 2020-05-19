@@ -226,6 +226,10 @@ class OAuth2IdProvider(IdProvider):
               dnInfo[k] = v
 
         if dnInfo.get('DN'):
+          if not dnInfo['DN'].startswith('/'):
+            items = dnInfo['DN'].split(',')
+            items.reverse()
+            dnInfo['DN'] = '/' + '/'.join(items)
           if dnInfo.get('PROVIDER'):
             result = getProviderByAlias(dnInfo['PROVIDER'], instance='Proxy')
             dnInfo['PROVIDER'] = result['Value'] if result['OK'] else 'Certificate'
