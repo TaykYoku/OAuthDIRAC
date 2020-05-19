@@ -9,6 +9,7 @@ from DIRAC import S_OK, S_ERROR, gLogger
 from DIRAC.Core.Security.X509Chain import X509Chain  # pylint: disable=import-error
 from DIRAC.Resources.IdProvider.IdProvider import IdProvider
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry
+from DIRAC.ConfigurationSystem.Client.Helpers.Resources import getProviderByAlias
 
 from OAuthDIRAC.FrameworkSystem.Utilities.OAuth2 import OAuth2
 from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerData import gOAuthManagerData
@@ -225,6 +226,9 @@ class OAuth2IdProvider(IdProvider):
               dnInfo[k] = v
 
         if dnInfo.get('DN'):
+          if dnInfo.get('PROVIDER'):
+            result = getProviderByAlias(dnInfo['PROVIDER'], instance='Proxy')
+            dnInfo['PROVIDER'] = result['Value'] if result['OK'] else 'Certificate'
           resDict['UsrOptns']['DNs'][dnInfo['DN']] = dnInfo
 
     return S_OK(resDict)

@@ -219,7 +219,7 @@ class OAuthDB(DB):
     # TODO: if not user by ID, maybe look by DN
     if not result['OK']:
       groups = []  # TODO: find also groups by ID
-      for dn in parseDict['UsrOptns']['DNs'].keys():
+      for dn in parseDict['UsrOptns']['DNs']:
         result = getGroupsForDN(dn)
         if not result['OK']:
           return result
