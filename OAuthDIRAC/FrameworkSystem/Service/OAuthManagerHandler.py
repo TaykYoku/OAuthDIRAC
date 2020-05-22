@@ -4,7 +4,7 @@ from DIRAC import gLogger, S_OK, S_ERROR
 from DIRAC.Core.DISET.RequestHandler import RequestHandler
 from DIRAC.Core.Utilities.DictCache import DictCache
 from DIRAC.Core.Utilities.ThreadScheduler import gThreadScheduler
-from DIRAC.ConfigurationSystem.Client.Helpers.Registry import getUsernameForID
+from DIRAC.ConfigurationSystem.Client.Helpers.Registry import getUsernameForID, getIDsForUsername
 
 from OAuthDIRAC.FrameworkSystem.DB.OAuthDB import OAuthDB
 
@@ -65,30 +65,36 @@ class OAuthManagerHandler(RequestHandler):
     gThreadScheduler.addPeriodicTask(3600 * 24, cls.__refreshIdPsIDsCache)
     return cls.__refreshIdPsIDsCache()
 
-  def __checkAuth(self, session):
+  def __checkAuth(self, session=None):
     """ Check authorization rules
 
         :param str session: session number
 
-        :return: S_OK()/S_ERROR()
+        :return: S_OK(list)/S_ERROR()
     """
     credDict = self.getRemoteCredentials()
     if credDict['group'] == 'hosts':
       if 'TrustedHost' in credDict['properties']:
-        return S_OK(None)
+        return S_OK()
       return S_ERROR('To access host must be "TrustedHost".')
-    
-    for oid, data in self.__IdPsIDsCache.getDict().items():
-      for prov in data['Provisers']:
-        if session in data[prov]:
-          result = getUsernameForID(oid)
-          if not result['OK']:
-            return result
-          if credDict['username'] == reslut['Value']:
-            return S_OK(credDict['username'])
-          return S_ERROR('%s user have no access to manage %s session' % (credDict['username'],
-                                                                          session))
-    return S_ERROR('%s session not found.' % session)
+
+    result = getIDsForUsername(res["Value"])
+    if not result['OK']:
+      return result
+    userIDs = result['Value']
+
+    idpDict = self.__IdPsIDsCache.getDict()
+
+    for oid in userIDs:
+      if oid not in idpDict:
+        userIDs.remove(oid)
+      elif session:
+        for prov in idpDict[oid].get('Provisers', []):
+          if session in idpDict[oid][prov]:
+            return S_OK()
+        return S_ERROR('%s session not found for %s user.' % (session, credDict['username']))
+
+    return S_OK(userIDs)
 
   types_getIdPsIDs = []
 
@@ -97,14 +103,12 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    res = self.__checkAuth(session)
+    res = self.__checkAuth()
     if not res['OK']:
       return res
     if not res["Value"]:
       return S_OK(self.__IdPsIDsCache.getDict())
-    result = getIDsForUsername(res["Value"])
-    if not result['Value']:
-      return result
+    
     data = {}
     for oid in result['Value']:
       idDict = self.__IdPsIDsCache.get(oid)
