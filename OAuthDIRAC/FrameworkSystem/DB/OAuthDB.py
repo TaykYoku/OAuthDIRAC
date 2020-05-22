@@ -96,7 +96,7 @@ class OAuthDB(DB):
           kill = self.killSession(session)
           self.log.warn('Cannot get user profile for %s session, removed.' % session, kill.get('Value') or kill.get('Message'))
           continue
-        userProfile = result['Value']
+        userProfile = result['Value']['UsrOptns']
         result = self.getTokensBySession(session)
         if not result['OK']:
           return result
