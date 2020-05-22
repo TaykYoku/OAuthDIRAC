@@ -74,7 +74,7 @@ class OAuthManagerHandler(RequestHandler):
     """
     credDict = self.getRemoteCredentials()
     if credDict['group'] == 'hosts':
-      if 'TrustedHost' in credDict['Properties']:
+      if 'TrustedHost' in credDict['properties']:
         return S_OK(None)
       return S_ERROR('To access host must be "TrustedHost".')
     
