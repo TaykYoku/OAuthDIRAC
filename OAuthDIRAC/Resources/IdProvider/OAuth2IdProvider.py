@@ -41,7 +41,7 @@ class OAuth2IdProvider(IdProvider):
     sessions = []
 
     if session:
-      result = self.fetchTokensAndUpdateSession(session) # TODO: need to first check tokens is active
+      result = self.fetchTokensAndUpdateSession(session)  # TODO: need to first check tokens is active
       if result['OK']:
         sessions += [session]
       if sessions:

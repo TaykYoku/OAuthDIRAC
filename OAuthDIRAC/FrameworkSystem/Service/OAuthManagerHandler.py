@@ -12,6 +12,30 @@ __RCSID__ = "$Id$"
 
 
 class OAuthManagerHandler(RequestHandler):
+  """ Authentication manager
+
+      Contain __IdPsIDsCache cache, with next structure:
+      {
+        <ID1>: {
+          Providers: [ <identity providers> ],
+          <identity provider>: [
+            {
+              <sessions number>: { <tokens> }
+            },
+            { ... }
+          ],
+          DNs: {
+            <DN1>: {
+              ProxyProvider: [ <proxy providers> ],
+              VOMSRoles: [ <VOMSRoles> ],
+              ...
+            },
+            <DN2>: { ... },
+          }
+        },
+        <ID2>: { ... },
+      }
+  """
 
   __oauthDB = None
   __IdPsIDsCache = DictCache()
@@ -41,6 +65,31 @@ class OAuthManagerHandler(RequestHandler):
     gThreadScheduler.addPeriodicTask(3600 * 24, cls.__refreshIdPsIDsCache)
     return cls.__refreshIdPsIDsCache()
 
+  def __checkAuth(self, session):
+    """ Check authorization rules
+
+        :param str session: session number
+
+        :return: S_OK()/S_ERROR()
+    """
+    credDict = self.getRemoteCredentials()
+    if credDict['group'] == 'hosts':
+      if 'TrustedHost' in credDict['Properties']:
+        return S_OK(None)
+      return S_ERROR('To access host must be "TrustedHost".')
+    
+    for oid, data in self.__IdPsIDsCache.getDict().items():
+      for prov in data['Provisers']:
+        if session in data[prov]:
+          result = getUsernameForID(oid)
+          if not result['OK']:
+            return result
+          if credDict['username'] == reslut['Value']:
+            return S_OK(credDict['username'])
+          return S_ERROR('%s user have no access to manage %s session' % (credDict['username'],
+                                                                          session))
+    return S_ERROR('%s session not found.' % session)
+
   types_getIdPsIDs = []
 
   def export_getIdPsIDs(self):
@@ -48,7 +97,20 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    return S_OK(self.__IdPsIDsCache.getDict())
+    res = self.__checkAuth(session)
+    if not res['OK']:
+      return res
+    if not res["Value"]:
+      return S_OK(self.__IdPsIDsCache.getDict())
+    result = getIDsForUsername(res["Value"])
+    if not result['Value']:
+      return result
+    data = {}
+    for oid in result['Value']:
+      idDict = self.__IdPsIDsCache.get(oid)
+      if idDict:
+        data[oid] = idDict
+    return S_OK(data)
 
   types_submitAuthorizeFlow = [basestring]
 
@@ -60,8 +122,12 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(dict)/S_ERROR()
     """
+    if session:
+      res = self.__checkAuth(session)
+      if not res['OK']:
+        return res
     gLogger.notice("Request to create authority URL for '%s'." % providerName)
-    result = self.__oauthDB.getAuthorization(providerName, session)
+    result = self.__oauthDB.getAuthorization(providerName, session=session)
     if not result['OK']:
       return S_ERROR('Cannot create authority request URL:', result['Message'])
     return result
@@ -78,6 +144,9 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(dict)/S_ERROR()
     """
+    res = self.__checkAuth(session)
+    if not res['OK']:
+      return res
     gLogger.notice('%s session get response "%s"' % (session, response))
     result = self.__oauthDB.parseAuthResponse(response, session)
     if not result['OK']:
@@ -99,7 +168,8 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK()/S_ERROR()
     """
-    return self.__oauthDB.updateSession(fieldsToUpdate, session=session)
+    res = self.__checkAuth(session)
+    return self.__oauthDB.updateSession(fieldsToUpdate, session=session) if res['OK'] else res
 
   types_killSession = [basestring]
 
@@ -110,7 +180,8 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK()/S_ERROR()
     """
-    return self.__oauthDB.killSession(session)
+    res = self.__checkAuth(session)
+    return self.__oauthDB.killSession(session) if res['OK'] else res
 
   types_logOutSession = [basestring]
 
@@ -121,7 +192,8 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK()/S_ERROR()
     """
-    return self.__oauthDB.logOutSession(session)
+    res = self.__checkAuth(session)
+    return self.__oauthDB.logOutSession(session) if res['OK'] else res
 
   types_getLinkBySession = [basestring]
 
@@ -132,7 +204,8 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(basestring)/S_ERROR()
     """
-    return self.__oauthDB.getLinkBySession(session)
+    res = self.__checkAuth(session)
+    return self.__oauthDB.getLinkBySession(session) if res['OK'] else res
   
   types_getSessionStatus = [basestring]
 
@@ -143,14 +216,15 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    result = self.__oauthDB.getStatusBySession(session)
-    if not result['OK']:
-      return result
-    if result['Value']['Status'] == 'authed':
-      user = getUsernameForID(result['Value']['ID'])
-      if user['OK']:
-        result['Value']['UserName'] = user['Value']
-    return result
+    res = self.__checkAuth(session)
+    return self.__oauthDB.getStatusBySession(session) if res['OK'] else res
+    # if not result['OK']:
+    #   return result
+    # if result['Value']['Status'] == 'authed':
+    #   user = getUsernameForID(result['Value']['ID'])
+    #   if user['OK']:
+    #     result['Value']['UserName'] = user['Value']
+    # return result
   
   types_getSessionTokens = [basestring]
 
@@ -161,7 +235,8 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    return self.__oauthDB.getTokensBySession(session)
+    res = self.__checkAuth(session)
+    return self.__oauthDB.getTokensBySession(session) if res['OK'] else res
 
   @staticmethod
   def __cleanOAuthDB():
