@@ -78,7 +78,7 @@ class OAuthManagerHandler(RequestHandler):
         return S_OK()
       return S_ERROR('To access host must be "TrustedHost".')
 
-    result = getIDsForUsername(res["Value"])
+    result = getIDsForUsername(credDict["username"])
     if not result['OK']:
       return result
     userIDs = result['Value']
