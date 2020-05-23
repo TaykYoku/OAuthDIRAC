@@ -78,10 +78,7 @@ class OAuthManagerHandler(RequestHandler):
         return S_OK()
       return S_ERROR('To access host must be "TrustedHost".')
 
-    result = getIDsForUsername(credDict["username"])
-    if not result['OK']:
-      return result
-    userIDs = result['Value']
+    userIDs = getIDsForUsername(credDict["username"])
 
     idpDict = self.__IdPsIDsCache.getDict()
 
