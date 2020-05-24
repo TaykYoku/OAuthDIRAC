@@ -2,6 +2,7 @@
 """
 from DIRAC import gLogger, S_OK, S_ERROR
 from DIRAC.Core.DISET.RequestHandler import RequestHandler
+from DIRAC.Core.Utilities import ThreadSafe
 from DIRAC.Core.Utilities.DictCache import DictCache
 from DIRAC.Core.Utilities.ThreadScheduler import gThreadScheduler
 from DIRAC.ConfigurationSystem.Client.Helpers.Registry import getUsernameForID, getIDsForUsername
@@ -11,10 +12,13 @@ from OAuthDIRAC.FrameworkSystem.DB.OAuthDB import OAuthDB
 __RCSID__ = "$Id$"
 
 
+gIdPsCacheSync = ThreadSafe.Synchronizer()
+
+
 class OAuthManagerHandler(RequestHandler):
   """ Authentication manager
 
-      Contain __IdPsIDsCache cache, with next structure:
+      Contain __IdPsCache cache, with next structure:
       {
         <ID1>: {
           Providers: [ <identity providers> ],
@@ -38,9 +42,10 @@ class OAuthManagerHandler(RequestHandler):
   """
 
   __oauthDB = None
-  __IdPsIDsCache = DictCache()
+  __IdPsCache = DictCache()
 
   @classmethod
+  @gIdPsCacheSync
   def __refreshIdPsIDsCache(cls, idPs=None, IDs=None):
     """ Update information about sessions
 
@@ -53,7 +58,7 @@ class OAuthManagerHandler(RequestHandler):
     if not result['OK']:
       return result
     for ID, infoDict in result['Value'].items():
-      cls.__IdPsIDsCache.add(ID, 3600 * 24, value=infoDict)
+      cls.__IdPsCache.add(ID, 3600 * 24, value=infoDict)
     return result
 
   @classmethod
@@ -63,8 +68,10 @@ class OAuthManagerHandler(RequestHandler):
     cls.__oauthDB = OAuthDB()
     gThreadScheduler.addPeriodicTask(3600, cls.__oauthDB.cleanZombieSessions)
     gThreadScheduler.addPeriodicTask(3600 * 24, cls.__refreshIdPsIDsCache)
-    return cls.__refreshIdPsIDsCache()
+    #return cls.__refreshIdPsIDsCache()
+    return S_OK()
 
+  @gIdPsCacheSync
   def __checkAuth(self, session=None):
     """ Check authorization rules
 
@@ -77,24 +84,27 @@ class OAuthManagerHandler(RequestHandler):
       if 'TrustedHost' in credDict['properties']:
         return S_OK()
       return S_ERROR('To access host must be "TrustedHost".')
-
+    
     userIDs = getIDsForUsername(credDict["username"])
-
-    idpDict = self.__IdPsIDsCache.getDict()
-
-    for oid in userIDs:
-      if oid not in idpDict:
-        userIDs.remove(oid)
-      elif session:
-        for prov in idpDict[oid].get('Provisers', []):
-          if session in idpDict[oid][prov]:
-            return S_OK()
-        return S_ERROR('%s session not found for %s user.' % (session, credDict['username']))
+    
+    if session:
+      for r in [True, False]:
+        idpDict = self.__IdPsCache.getDict()
+        for oid in userIDs:
+          if oid in idpDict:
+            for prov in idpDict[oid].get('Provisers', []):
+              if session in idpDict[oid][prov]:
+                return S_OK()
+        if r:
+          result = self.__refreshIdPsIDsCache(IDs=userIDs)
+          if not result['OK']:
+            return result
+      return S_ERROR('%s session not found for %s user.' % (session, credDict['username']))
 
     return S_OK(userIDs)
 
   types_getIdPsIDs = []
-
+  @gIdPsCacheSync
   def export_getIdPsIDs(self):
     """ Return fresh info from identity providers about users with actual sessions
 
@@ -104,11 +114,11 @@ class OAuthManagerHandler(RequestHandler):
     if not res['OK']:
       return res
     if not res["Value"]:
-      return S_OK(self.__IdPsIDsCache.getDict())
+      return S_OK(self.__IdPsCache.getDict())
     
     data = {}
     for oid in result['Value']:
-      idDict = self.__IdPsIDsCache.get(oid)
+      idDict = self.__IdPsCache.get(oid)
       if idDict:
         data[oid] = idDict
     return S_OK(data)

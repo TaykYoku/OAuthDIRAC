@@ -44,14 +44,14 @@ class OAuthManagerData(object):
     """ Constructor
     """
     self.__IdPsCache = DictCache()
-    self.refreshIdPs()
+    #self.refreshIdPs()
 
   @gIdPsIDsSync
   def refreshIdPs(self, IDs=None, sessionIDDict=None):
     """ Update cache from OAuthDB or dictionary
 
-        :param list IDs: list of IDs
-        :param dict sessionIDDict: session ID dictionary
+        :param list IDs: refresh IDs
+        :param dict sessionIDDict: add session ID dictionary
 
         :return: S_OK()/S_ERROR()
     """
@@ -82,21 +82,22 @@ class OAuthManagerData(object):
 
         :return: S_OK(dict)/S_ERROR() -- dictionary contain ID as key and information collected from IdP
     """
+    resDict = {}
+
     # Update cache if not actual
     if not self.__IdPsCache.get('Fresh'):
       result = self.refreshIdPs()
       if not result['OK']:
         return result
-    idPsCache = self.__IdPsCache.getDict()
 
     # Return cache without Fresh key
+    idPsCache = self.__IdPsCache.getDict()
     idPsCache.pop('Fresh', None)
-    if not IDs:
-      return S_OK(idPsCache)
-    resDict = {}
+
     for ID, idDict in idPsCache.items():
-      if ID in IDs:
-        resDict[ID] = idDict
+      if IDs and ID not in IDs:
+        continue
+      resDict[ID] = idDict
     return S_OK(resDict)
 
   def getIDForSession(self, session):
@@ -106,21 +107,17 @@ class OAuthManagerData(object):
         
         :return: S_OK()/S_ERROR()
     """
-    idPsCache = self.__IdPsCache.getDict()
-    idPsCache.pop('Fresh', None)
-    for ID, infoDict in idPsCache.items():
-      for prov in infoDict['Providers']:
-        if session in infoDict[prov]:
-          return S_OK(ID)
-    result = self.refreshIdPs()
-    if not result['OK']:
-      return result
-    idPsCache = self.__IdPsCache.getDict()
-    idPsCache.pop('Fresh', None)
-    for ID, infoDict in idPsCache.items():
-      for prov in infoDict['Providers']:
-        if session in infoDict[prov]:
-          return S_OK(ID)
+    for r in [True, False]:
+      idPsCache = self.__IdPsCache.getDict()
+      idPsCache.pop('Fresh', None)
+      for ID, infoDict in idPsCache.items():
+        for prov in infoDict['Providers']:
+          if session in infoDict[prov]:
+            return S_OK(ID)
+      if r:
+        result = self.refreshIdPs()
+        if not result['OK']:
+          return result
     return S_ERROR('No ID found for session %s' % session)
 
 
