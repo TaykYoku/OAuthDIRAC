@@ -96,10 +96,12 @@ class OAuth2IdProvider(IdProvider):
 
     for key, value in userProfile.items():
       resDict[key] = value
-    result = self.__fetchTokens(tokens)  # TODO: remove here and first check AT & RT status
+    
+    # result = self.__fetchTokens(tokens)  # TODO: remove here and first check AT & RT status
+    result = self.fetch(tokens)
     if not result['OK']:
       return result
-    resDict['Tokens'] = result['Value']
+    # resDict['Tokens'] = result['Value']
     self.log.debug('Got response dictionary:\n', pprint.pformat(resDict))
     return S_OK(resDict)
 
@@ -129,7 +131,10 @@ class OAuth2IdProvider(IdProvider):
     if not result['OK']:
       kill = gSessionManager.killSession(session)
       return result if kill['OK'] else kill
-    return gSessionManager.updateSession(session, result['Value'])
+    tokens = result['Value']
+    if not tokens.get('RefreshToken'):
+      return S_ERROR('No refresh token found in response.')
+    return gSessionManager.updateSession(session, tokens)
   
   def __fetchTokens(self, tokens):
     """ Fetch tokens

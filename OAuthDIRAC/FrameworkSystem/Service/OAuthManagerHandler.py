@@ -21,13 +21,11 @@ class OAuthManagerHandler(RequestHandler):
       Contain __IdPsCache cache, with next structure:
       {
         <ID1>: {
-          Providers: [ <identity providers> ],
-          <identity provider>: [
-            {
-              <sessions number>: { <tokens> }
-            },
-            { ... }
-          ],
+          Providers: {
+            <identity provider>: {
+              <sessions number1>: { <tokens> },
+              <sessions number2>: { ... }
+          },
           DNs: {
             <DN1>: {
               ProxyProvider: [ <proxy providers> ],
@@ -46,19 +44,22 @@ class OAuthManagerHandler(RequestHandler):
 
   @classmethod
   @gIdPsCacheSync
-  def __refreshIdPsIDsCache(cls, idPs=None, IDs=None):
+  def __refreshIdPsIDsCache(cls, idPs=None, IDs=None, idDict=None):
     """ Update information about sessions
 
         :param list idPs: list of identity providers that sessions need to update, if None - update all
         :param list IDs: list of IDs that need to update, if None - update all
+        :param dict idDict: information that need to update
 
         :return: S_OK()/S_ERROR()
     """
-    result = cls.__oauthDB.updateIdPSessionsInfoCache(idPs=idPs, IDs=IDs)
-    if not result['OK']:
-      return result
-    for ID, infoDict in result['Value'].items():
-      cls.__IdPsCache.add(ID, 3600 * 24, value=infoDict)
+    if not idDict:
+      result = cls.__oauthDB.updateIdPSessionsInfoCache(idPs=idPs, IDs=IDs)
+      if not result['OK']:
+        return result
+      idDict = result['Value']
+    for oid, data in idDict.items():
+      cls.__IdPsCache.add(oid, 3600 * 24, value=data)
     return result
 
   @classmethod
@@ -163,7 +164,7 @@ class OAuthManagerHandler(RequestHandler):
     if not result['OK']:
       return result
     if result['Value']['Status'] in ['authed', 'redirect']:
-      refresh = self.__refreshIdPsIDsCache(idPs=None, IDs=[result['Value']['UserProfile']['UsrOptns']['ID']])
+      refresh = self.__refreshIdPsIDsCache(IDs=[result['Value']['UserProfile']['UsrOptns']['ID']])
       if not refresh['OK']:
         return refresh
       result['Value']['sessionIDDict'] = refresh['Value']

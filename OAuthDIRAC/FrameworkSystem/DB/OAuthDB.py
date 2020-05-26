@@ -70,11 +70,24 @@ class OAuthDB(DB):
   
   def updateIdPSessionsInfoCache(self, idPs=None, IDs=None):
     """ Update cache with information about active session with identity provider
+        Must return following structure:
+          { 
+            <ID>: {
+              Providers: {
+                <idetntity provider>: {
+                  <session>: { tokens dictionary }
+                }
+              },
+              DNs: {
+                <DN>: { some metadata }
+              }
+            }
+          }
 
         :param list idPs: list of identity providers that sessions need to update, if None - update all
         :param list IDs: list of IDs that need to update, if None - update all
 
-        :return: S_OK()/S_ERROR()
+        :return: S_OK(dict)/S_ERROR()
     """
     IdPSessionsInfo = {}
     result = self._query("SELECT DISTINCT ID, Provider, Session FROM `Sessions`")
@@ -84,8 +97,8 @@ class OAuthDB(DB):
       if (idPs and idP not in idPs) or (IDs and ID not in IDs):
         continue
       if ID not in IdPSessionsInfo:
-        IdPSessionsInfo[ID] = {'Providers': []}
-      if idP not in IdPSessionsInfo[ID]:
+        IdPSessionsInfo[ID] = {'Providers': {}, 'DNs': {}}
+      if idP not in IdPSessionsInfo[ID]['Providers']:
         result = IdProviderFactory().getIdProvider(idP)
         if not result['OK']:
           return result
@@ -105,13 +118,11 @@ class OAuthDB(DB):
           result = self.killSession(session)
           self.log.warn('Not found tokens for %s session, removed.' % session, result.get('Value') or result.get('Message'))
           continue
-        IdPSessionsInfo[ID][idP] = {session: tokens}
-        IdPSessionsInfo[ID]['Providers'] = list(set(IdPSessionsInfo[ID]['Providers'] + [idP]))
+        IdPSessionsInfo[ID]['Providers'][idP] = {session: tokens}
         # Fill user profile
         for key, value in userProfile.items():
-          if key in IdPSessionsInfo[ID]:
-            continue
-          IdPSessionsInfo[ID][key] = value
+          if key not in IdPSessionsInfo[ID]:
+            IdPSessionsInfo[ID][key] = value
       else:
         result = self.getTokensBySession(session)
         if not result['OK']:
@@ -121,7 +132,7 @@ class OAuthDB(DB):
           result = self.killSession(session)
           self.log.warn('Not found tokens for %s session, removed.' % session, result.get('Value') or result.get('Message'))
           continue
-        IdPSessionsInfo[ID][idP][session] = tokens
+        IdPSessionsInfo[ID]['Providers'][idP][session] = tokens
       
     return S_OK(IdPSessionsInfo)
 
@@ -248,8 +259,8 @@ class OAuthDB(DB):
           return result
         return S_OK((parseDict, status, comment, __mail))  # TODO: i think here is bug (need backtab)
 
-    if not parseDict['Tokens'].get('RefreshToken'):
-      return S_ERROR('No refresh token found in response.')
+    # if not parseDict['Tokens'].get('RefreshToken'):
+    #   return S_ERROR('No refresh token found in response.')
 
     # If current session is session to reserve
     if re.match('^reserved_.*', session):
@@ -259,9 +270,13 @@ class OAuthDB(DB):
       if not result['OK']:
         return result
       # Update status in current session
-      result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'ExpiresIn': parseDict['Tokens']['ExpiresIn'], 
-                                   'TokenType': parseDict['Tokens']['TokenType'], 'AccessToken': parseDict['Tokens']['AccessToken'],
-                                   'RefreshToken': parseDict['Tokens']['RefreshToken'], 'Status': 'reserved', 'Comment': comment},
+      result = self.updateSession({'ID': parseDict['UsrOptns']['ID'],
+                                  #  It's added in IdProvider:
+                                  #  'ExpiresIn': parseDict['Tokens']['ExpiresIn'], 
+                                  #  'TokenType': parseDict['Tokens']['TokenType'],
+                                  #  'AccessToken': parseDict['Tokens']['AccessToken'],
+                                  #  'RefreshToken': parseDict['Tokens']['RefreshToken'],
+                                   'Status': 'reserved', 'Comment': comment},
                                   session=session)
       if not result['OK']:
         return result
@@ -282,40 +297,50 @@ class OAuthDB(DB):
           return result
         url = result['Value']['URL']
         # Save tokens to current session
-        result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'ExpiresIn': parseDict['Tokens']['ExpiresIn'], 
-                                     'TokenType': parseDict['Tokens']['TokenType'], 'AccessToken': parseDict['Tokens']['AccessToken'],
-                                     'RefreshToken': parseDict['Tokens']['RefreshToken'], 'Status': 'redirect', 'Comment': comment},
+        result = self.updateSession({'ID': parseDict['UsrOptns']['ID'],
+                                    #  Allready added in IdProvider:
+                                    #  'ExpiresIn': parseDict['Tokens']['ExpiresIn'], 
+                                    #  'TokenType': parseDict['Tokens']['TokenType'],
+                                    #  'AccessToken': parseDict['Tokens']['AccessToken'],
+                                    #  'RefreshToken': parseDict['Tokens']['RefreshToken'],
+                                     'Status': 'redirect', 'Comment': comment},
                                     session=session)
         if not result['OK']:
           return result
         return S_OK((parseDict, 'redirect', url, __mail))
 
-      # If notified, its mean that current session will not use and we can reserve it
-      fillDict = {
-        'ID': parseDict['UsrOptns']['ID'],
-        'Status': 'reserved',
-        'Comment': '',
-        'Session': 'reserved_%s' % session,
-        'Provider': providerName,
-        'ExpiresIn': parseDict['Tokens']['ExpiresIn'],
-        'TokenType': parseDict['Tokens']['TokenType'],
-        'AccessToken': parseDict['Tokens']['AccessToken'],
-        'RefreshToken': parseDict['Tokens']['RefreshToken'],
-        'LastAccess': 'UTC_TIMESTAMP()'
-      }
-      result = self.insertFields('Sessions', fillDict.keys(), fillDict.values())
-      if result['OK']:
-        self.log.info(session, 'session was reserved')
-        result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'Status': status, 'Comment': comment},
-                                    session=session)
-      if not result['OK']:
-        return result
-      return S_OK((parseDict, status, comment, __mail))
+      # If user not confirm yet, we not create reserv session
+      # # If notified, its mean that current session will not use and we can reserve it
+      # fillDict = {
+      #   'ID': parseDict['UsrOptns']['ID'],
+      #   'Status': 'reserved',
+      #   'Comment': '',
+      #   'Session': 'reserved_%s' % session,
+      #   'Provider': providerName,
+      #   'ExpiresIn': parseDict['Tokens']['ExpiresIn'],
+      #   'TokenType': parseDict['Tokens']['TokenType'],
+      #   'AccessToken': parseDict['Tokens']['AccessToken'],
+      #   'RefreshToken': parseDict['Tokens']['RefreshToken'],
+      #   'LastAccess': 'UTC_TIMESTAMP()'
+      # }
+      # result = self.insertFields('Sessions', fillDict.keys(), fillDict.values())
+      # if result['OK']:
+      #   self.log.info(session, 'session was reserved')
+      #   result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'Status': status, 'Comment': comment},
+      #                               session=session)
+      result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'Status': status, 'Comment': comment},
+                                  session=session)
+
+      return S_OK((parseDict, status, comment, __mail)) if result['OK'] else result
 
     # If reserved session exist
-    result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'ExpiresIn': parseDict['Tokens']['ExpiresIn'], 
-                                 'TokenType': parseDict['Tokens']['TokenType'], 'AccessToken': parseDict['Tokens']['AccessToken'],
-                                 'RefreshToken': parseDict['Tokens']['RefreshToken'], 'Status': status, 'Comment': comment},
+    result = self.updateSession({'ID': parseDict['UsrOptns']['ID'],
+                                #  It's added in IdP:
+                                #  'ExpiresIn': parseDict['Tokens']['ExpiresIn'], 
+                                #  'TokenType': parseDict['Tokens']['TokenType'],
+                                #  'AccessToken': parseDict['Tokens']['AccessToken'],
+                                #  'RefreshToken': parseDict['Tokens']['RefreshToken'],
+                                 'Status': status, 'Comment': comment},
                                 session=session)
     if not result['OK']:
       return result

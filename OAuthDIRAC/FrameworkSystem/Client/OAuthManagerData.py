@@ -70,8 +70,8 @@ class OAuthManagerData(object):
     result = gSessionManager.getIdPsIDs()
     if result['OK']:
       for ID, infoDict in result['Value'].items():
-        if len(infoDict['Providers']) > 1:
-          gLogger.warn('%s user ID used by more that one providers:' % ID, ', '.join(infoDict['Providers']))
+        if len(infoDict['Providers'].keys()) > 1:
+          gLogger.warn('%s user ID used by more that one providers:' % ID, ', '.join(infoDict['Providers'].keys()))
         self.__IdPsCache.add(ID, 3600 * 24, infoDict)
     return S_OK() if result['OK'] else result
   
@@ -111,8 +111,8 @@ class OAuthManagerData(object):
       idPsCache = self.__IdPsCache.getDict()
       idPsCache.pop('Fresh', None)
       for ID, infoDict in idPsCache.items():
-        for prov in infoDict['Providers']:
-          if session in infoDict[prov]:
+        for prov, data in infoDict['Providers'].items():
+          if session in data:
             return S_OK(ID)
       if r:
         result = self.refreshIdPs()
