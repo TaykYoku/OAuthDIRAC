@@ -31,8 +31,8 @@ class OAuth2IdProvider(IdProvider):
   def checkStatus(self, username=None, session=None):
     """ Read ready to work status of identity provider
 
-        :param basestring username: DIRAC user
-        :param basestring session: if need to check session
+        :param str username: DIRAC user
+        :param str session: if need to check session
 
         :return: S_OK(dict)/S_ERROR() -- dictionary contain fields:
                  - 'Status' with ready to work status[ready, needToAuth]
@@ -108,7 +108,7 @@ class OAuth2IdProvider(IdProvider):
   def fetch(self, session):
     """ Fetch session
         
-        :param basestring,dict session: session number or dictionary
+        :param str,dict session: session number or dictionary
 
         :return: S_OK()/S_ERROR()
     """
@@ -117,12 +117,12 @@ class OAuth2IdProvider(IdProvider):
   def fetchTokensAndUpdateSession(self, session):
     """ Fetch tokens and update session in DB
 
-        :param basestring,dict session: session number or dictionary
+        :param str,dict session: session number or dictionary
 
         :return: S_OK()/S_ERROR()
     """
     tokens = session
-    if isinstance(session, basestring):
+    if isinstance(session, str):
       result = gSessionManager.getSessionTokens(session)
       if not result['OK']:
         return result
@@ -245,12 +245,12 @@ class OAuth2IdProvider(IdProvider):
   def getUserProfile(self, session):
     """ Get user information from identity provider
 
-        :param basestring,dict session: session number or dictionary
+        :param str,dict session: session number or dictionary
 
         :return: S_OK(dict)/S_ERROR() -- dictionary contain user profile information
     """
     tokens = session
-    if isinstance(session, basestring):
+    if isinstance(session, str):
       result = gSessionManager.getSessionTokens(session)
       if not result['OK']:
         return result
@@ -273,12 +273,12 @@ class OAuth2IdProvider(IdProvider):
   def logOut(self, session):
     """ Revoke tokens
 
-        :param basestring,dict session: session number or dictionary
+        :param str,dict session: session number or dictionary
 
         :return: S_OK()/S_ERROR()
     """
     tokens = session
-    if isinstance(session, basestring):
+    if isinstance(session, str):
       result = gSessionManager.getSessionTokens(session)
       if not result['OK']:
         return result
