@@ -219,7 +219,7 @@ class OAuthDB(DB):
     result = self.__getFields(['Provider'], session=session)
     if not result['OK']:
       return result
-    return result['Value']['Provider']
+    return S_OK(result['Value']['Provider'])
   
   def getStatusBySession(self, session):
     """ Get status dictionary by session id
