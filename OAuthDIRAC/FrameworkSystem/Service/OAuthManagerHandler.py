@@ -9,6 +9,7 @@ from DIRAC.Core.Utilities.DictCache import DictCache
 from DIRAC.Core.Utilities.ThreadScheduler import gThreadScheduler
 from DIRAC.ConfigurationSystem.Client.Helpers.Registry import getUsernameForID, getIDsForUsername
 from DIRAC.Resources.IdProvider.IdProviderFactory import IdProviderFactory
+from DIRAC.ConfigurationSystem.Client.Utilities import getAuthAPI
 
 from OAuthDIRAC.FrameworkSystem.DB.OAuthDB import OAuthDB
 

@@ -12,16 +12,15 @@ from datetime import datetime
 
 from DIRAC import gConfig, S_OK, S_ERROR, gLogger
 from DIRAC.Core.Base.DB import DB
-from DIRAC.ConfigurationSystem.Client.CSAPI import CSAPI
-from DIRAC.ConfigurationSystem.Client.Utilities import getAuthAPI
-from DIRAC.ConfigurationSystem.Client.Helpers.Registry import getGroupsForDN, getUsernameForID, getEmailsForGroup
+# from DIRAC.ConfigurationSystem.Client.CSAPI import CSAPI
+# from DIRAC.ConfigurationSystem.Client.Helpers.Registry import getGroupsForDN, getUsernameForID, getEmailsForGroup
 from DIRAC.Resources.IdProvider.IdProviderFactory import IdProviderFactory
 #from DIRAC.Resources.ProxyProvider.ProxyProviderFactory import ProxyProviderFactory
-from DIRAC.FrameworkSystem.Client.NotificationClient import NotificationClient
+#from DIRAC.FrameworkSystem.Client.NotificationClient import NotificationClient
 
 __RCSID__ = "$Id$"
 
-gCSAPI = CSAPI()
+# gCSAPI = CSAPI()
 
 
 class OAuthDB(DB):
