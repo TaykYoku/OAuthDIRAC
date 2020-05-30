@@ -1,5 +1,7 @@
 """ The OAuth service provides a toolkit to authoticate throught OIDC session.
 """
+import re
+
 from DIRAC import gLogger, S_OK, S_ERROR
 from DIRAC.Core.DISET.RequestHandler import RequestHandler
 from DIRAC.Core.Utilities import ThreadSafe
@@ -39,7 +41,7 @@ class OAuthManagerHandler(RequestHandler):
       }
   """
 
-  __oauthDB = None
+  __db = None
   __IdPsCache = DictCache()
 
   @classmethod
@@ -54,7 +56,7 @@ class OAuthManagerHandler(RequestHandler):
         :return: S_OK()/S_ERROR()
     """
     if not idDict:
-      result = cls.__oauthDB.updateIdPSessionsInfoCache(idPs=idPs, IDs=IDs)
+      result = cls.__db.updateIdPSessionsInfoCache(idPs=idPs, IDs=IDs)
       if not result['OK']:
         return result
       idDict = result['Value']
@@ -66,8 +68,8 @@ class OAuthManagerHandler(RequestHandler):
   def initializeHandler(cls, serviceInfo):
     """ Handler initialization
     """
-    cls.__oauthDB = OAuthDB()
-    gThreadScheduler.addPeriodicTask(3600, cls.__oauthDB.cleanZombieSessions)
+    cls.__db = OAuthDB()
+    gThreadScheduler.addPeriodicTask(3600, cls.__db.cleanZombieSessions)
     gThreadScheduler.addPeriodicTask(3600 * 24, cls.__refreshIdPsIDsCache)
     #return cls.__refreshIdPsIDsCache()
     return S_OK()
@@ -138,11 +140,24 @@ class OAuthManagerHandler(RequestHandler):
       res = self.__checkAuth(session)
       if not res['OK']:
         return res
-    gLogger.notice("Request to create authority URL for '%s'." % providerName)
-    result = self.__oauthDB.getAuthorization(providerName, session=session)
+    
+    gLogger.info('Get authorization for %s.' % providerName, 'Session: %s' % session if session else '')
+    result = IdProviderFactory().getIdProvider(providerName, sessionMananger=self.__db)
+    if not result['OK']:
+      return result
+    provObj = result['Value']
+    if session:
+      result = provObj.checkStatus(session=session)
+      if not result['OK']:
+        return result
+      if result['Value']['Status'] == 'ready':
+        return result
+    
+    result = provObj.submitNewSession()
     if not result['OK']:
       return S_ERROR('Cannot create authority request URL:', result['Message'])
-    return result
+    session = result['Value']
+    return S_OK({'Status': 'needToAuth', 'URL': '%s/auth/%s' % (getAuthAPI().strip('/'), session)})
   
   types_parseAuthResponse = [dict, basestring]
 
@@ -159,15 +174,128 @@ class OAuthManagerHandler(RequestHandler):
     res = self.__checkAuth(session)
     if not res['OK']:
       return res
-    gLogger.notice('%s session get response "%s"' % (session, response))
-    result = self.__oauthDB.parseAuthResponse(response, session)
+
+    result = self.__parseAuthResponse(response, session)
     if not result['OK']:
-      return result
+      cansel = self.__db.updateSession({'Status': 'failed', 'Comment': result['Message']},
+                                       session=session)
+      return result if cansel['OK'] else cansel
+
     if result['Value']['Status'] in ['authed', 'redirect']:
       refresh = self.__refreshIdPsIDsCache(IDs=[result['Value']['UserProfile']['UsrOptns']['ID']])
       if not refresh['OK']:
         return refresh
       result['Value']['sessionIDDict'] = refresh['Value']
+    return result
+  
+  def __parseAuthResponse(self, response, session):
+    """ Fill session by user profile, tokens, comment, OIDC authorize status, etc.
+        Prepare dict with user parameters, if DN is absent there try to get it.
+        Create new or modify existend DIRAC user and store the session
+
+        :param dict response: authorization response
+        :param basestring session: session number
+
+        :return: S_OK(dict)/S_ERROR()
+    """
+    result = self.__db.updateSession({'Status': 'finishing'}, session=session)
+    if not result['OK']:
+      return result
+
+    # Search provider by session
+    result = self.__db.getProviderBySession(session)
+    if not result['OK']:
+      return result
+    provider = result['Value']
+    result = IdProviderFactory().getIdProvider(provider, sessionMananger=self.__db)
+    if not result['OK']:
+      return result
+    provObj = result['Value']
+
+    # Parsing response
+    result = provObj.parseAuthResponse(response)
+    if not result['OK']:
+      return result
+    parseDict = result['Value']
+
+    status = 'authed'
+    comment = ''
+
+    # Is ID registred?
+    userID = parseDict['UsrOptns']['ID']
+    result = getUsernameForID(userID)
+    if result['OK']:
+      # This session to reserve?
+      if re.match('^reserved_.*', session):
+        # Update status in source session
+        result = self.__db.updateSession({'Status': status},
+                                          session=session.replace('reserved_', ''))
+        if not result['OK']:
+          return result
+        
+        # Update status in current session
+        result = self.__db.updateSession({'Status': 'reserved'}, session=session)
+        if not result['OK']:
+          return result
+
+      else:
+        # If not, search reserved session
+        result = self.__db.getReservedSession(userID, provider)
+        if not result['OK']:
+          return result
+
+        if not result['Value']:
+          # If no found reserved session, submit second flow to create it
+          result = provObj.submitNewSession(session='reserved_%s' % session)
+          if not result['OK']:
+            return result
+          session = result['Value']
+
+          status = 'redirect'
+          comment = '%s/auth/%s' % (getAuthAPI().strip('/'), session)
+
+          result = self.__db.updateSession({'Status': status}, session=session)
+          if not result['OK']:
+            return result
+
+    else:
+
+      status = 'authed and notify'
+
+      result = self.__registerNewUser(provider, parseDict)
+      if not result['OK']:
+        return result
+    
+    return S_OK({'Status': status, 'Comment': comment, 'UserProfile': parseDict})
+
+
+  def __registerNewUser(self, parseDict):
+    """ Register new user
+
+        :param str provider: provider
+        :param dict parseDict: user information dictionary
+
+        :return: S_OK()/S_ERROR()
+    """
+    from DIRAC.FrameworkSystem.Client.NotificationClient import NotificationClient
+
+    mail = {}
+    mail['subject'] = "[SessionManager] User %s to be added." % parseDict['username']
+    mail['body'] = 'User %s was authenticated by ' % parseDict['UsrOptns']['FullName']
+    mail['body'] += provider
+    mail['body'] +=   "\n\nAuto updating of the user database is not allowed."
+    mail['body'] += " New user %s to be added," % parseDict['username']
+    mail['body'] += "with the following information:\n"
+    mail['body'] += "\nUser name: %s\n" % parseDict['username']
+    mail['body'] += "\nUser profile:\n%s" % pprint.pformat(parseDict['UsrOptns'])
+    mail['body'] += "\n\n------"
+    mail['body'] += "\n This is a notification from the DIRAC OAuthManager service, please do not reply.\n"
+    for addresses in getEmailsForGroup('dirac_admin'):
+      result = NotificationClient().sendMail(addresses, mail['subject'], mail['body'], localAttempt=False)
+      if not result['OK']:
+        self.log.error(session, 'session error: %s' % result['Message'])
+    if result['OK']:
+      self.log.info("%s session, mails to admins:", result['Value'])
     return result
 
   types_updateSession = [basestring, dict]
@@ -181,7 +309,7 @@ class OAuthManagerHandler(RequestHandler):
         :return: S_OK()/S_ERROR()
     """
     res = self.__checkAuth(session)
-    return self.__oauthDB.updateSession(fieldsToUpdate, session=session) if res['OK'] else res
+    return self.__db.updateSession(fieldsToUpdate, session=session) if res['OK'] else res
 
   types_killSession = [basestring]
 
@@ -193,7 +321,7 @@ class OAuthManagerHandler(RequestHandler):
         :return: S_OK()/S_ERROR()
     """
     res = self.__checkAuth(session)
-    return self.__oauthDB.killSession(session) if res['OK'] else res
+    return self.__db.killSession(session) if res['OK'] else res
 
   types_logOutSession = [basestring]
 
@@ -205,7 +333,7 @@ class OAuthManagerHandler(RequestHandler):
         :return: S_OK()/S_ERROR()
     """
     res = self.__checkAuth(session)
-    return self.__oauthDB.logOutSession(session) if res['OK'] else res
+    return self.__db.logOutSession(session) if res['OK'] else res
 
   types_getLinkBySession = [basestring]
 
@@ -217,7 +345,7 @@ class OAuthManagerHandler(RequestHandler):
         :return: S_OK(basestring)/S_ERROR()
     """
     res = self.__checkAuth(session)
-    return self.__oauthDB.getLinkBySession(session) if res['OK'] else res
+    return self.__db.getLinkBySession(session) if res['OK'] else res
   
   types_getSessionStatus = [basestring]
 
@@ -229,7 +357,7 @@ class OAuthManagerHandler(RequestHandler):
         :return: S_OK(dict)/S_ERROR()
     """
     res = self.__checkAuth(session)
-    return self.__oauthDB.getStatusBySession(session) if res['OK'] else res
+    return self.__db.getStatusBySession(session) if res['OK'] else res
     # if not result['OK']:
     #   return result
     # if result['Value']['Status'] == 'authed':
@@ -248,7 +376,7 @@ class OAuthManagerHandler(RequestHandler):
         :return: S_OK(dict)/S_ERROR()
     """
     res = self.__checkAuth(session)
-    return self.__oauthDB.getTokensBySession(session) if res['OK'] else res
+    return self.__db.getTokensBySession(session) if res['OK'] else res
 
   @staticmethod
   def __cleanOAuthDB():
@@ -257,7 +385,7 @@ class OAuthManagerHandler(RequestHandler):
         :return: S_OK()/S_ERROR()
     """
     gLogger.notice("Killing zombie sessions")
-    result = self.__oauthDB.cleanZombieSessions()
+    result = self.__db.cleanZombieSessions()
     if not result['OK']:
       gLogger.error(result['Message'])
       return result

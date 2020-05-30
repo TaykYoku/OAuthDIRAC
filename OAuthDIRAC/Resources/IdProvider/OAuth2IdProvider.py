@@ -13,20 +13,46 @@ from DIRAC.ConfigurationSystem.Client.Helpers.Resources import getProviderByAlia
 
 from OAuthDIRAC.FrameworkSystem.Utilities.OAuth2 import OAuth2
 from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerData import gOAuthManagerData
-from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import gSessionManager
 
 __RCSID__ = "$Id$"
 
 
 class OAuth2IdProvider(IdProvider):
 
-  def __init__(self, parameters=None):
-    super(OAuth2IdProvider, self).__init__(parameters)
+  def __init__(self, parameters=None, sessionManager=None):
+    super(OAuth2IdProvider, self).__init__(parameters, sessionManager)
   
   def setParameters(self, parameters):
-    self.log = gLogger.getSubLogger('%s/%s' % (__name__, parameters['ProviderName']))
+    #self.log = gLogger.getSubLogger('%s/%s' % (__name__, parameters['ProviderName']))
     self.parameters = parameters
     self.oauth2 = OAuth2(parameters['ProviderName'])
+
+  def submitNewSession(self, session=None):
+    """ Submit new authorization session
+
+        :param str session: session number
+
+        :return: S_OK(str)/S_ERROR()
+    """
+    result = self.isSessionManagerAble()
+    if not result['OK']:
+      return result
+    
+    result = self.sessionMananger.createNewSession(session=session)
+    if not result['OK']:
+      return result
+    session = result['Value']
+
+    result = self.oauth2.createAuthRequestURL(session)
+    if result['OK']:
+      url = result['Value']
+      result = self.sessionMananger.updateSession(session, {'Provider': parameters['ProviderName'],
+                                                            'Comment': url})
+    if not result['OK']:
+      kill = self.sessionMananger.killSession(session)
+      return result if kill['OK'] else kill
+    
+    return S_OK(session)
 
   def checkStatus(self, username=None, session=None):
     """ Read ready to work status of identity provider
@@ -38,36 +64,63 @@ class OAuth2IdProvider(IdProvider):
                  - 'Status' with ready to work status[ready, needToAuth]
                  - 'AccessToken' with list of access token
     """
-    sessions = []
+    result = self.isSessionManagerAble()
+    if not result['OK']:
+      return result
 
     if session:
-      result = self.fetchTokensAndUpdateSession(session)  # TODO: need to first check tokens is active
-      if result['OK']:
-        sessions += [session]
-      if sessions:
-        result = gOAuthManagerData.getIDForSession(sessions[0])
+      result = self.sessionMananger.getLifetime(session)
+      if not result['OK']:
+        return result
+      if result['Value'] < 10 * 60:
+        self.log.debug('%s tokens are expired, try to refresh' % session)
+        result = self.sessionMananger.getSessionTokens(session)
         if not result['OK']:
           return result
-        result = Registry.getUsernameForID(result['Value'])
-        if not result['OK']:
-          return result
-        username = result['Value']
+        tokens = result['Value']
+        result = self.__fetchTokens(tokens)
+        if result['OK']:  
+          tokens = result['Value']
+          if not tokens.get('RefreshToken'):
+            return S_ERROR('No refresh token found in response.')
+          return self.sessionMananger.updateSession(session, tokens)
+        kill = self.sessionMananger.killSession(session)
+        return S_OK({'Status': 'fail', 'Comment': result['Message']}) if kill['OK'] else kill
 
-    if username:
-      result = gOAuthManagerData.getIdPsCache(Registry.getIDsForUsername(username))
-      if not result['OK']:
-        return result
-      for idDict in result['Value'].values():
-        if self.parameters['ProviderName'] in idDict:
-          sessions += idDict[self.parameters['ProviderName']].keys()
-    if not sessions:
-      result = self.oauth2.createAuthRequestURL(session)
-      if not result['OK']:
-        return result
-      result['Value']['Status'] = 'needToAuth'
-      return result
+      return S_OK({'Status': 'ready'})
+    return S_ERROR('NOT READY')
+
+    # sessions = []
+
+    # if session:
+    #   result = self.fetchTokensAndUpdateSession(session)  # TODO: need to first check tokens is active
+    #   if result['OK']:
+    #     sessions += [session]
+    #   if sessions:
+    #     result = gOAuthManagerData.getIDForSession(sessions[0])
+    #     if not result['OK']:
+    #       return result
+    #     result = Registry.getUsernameForID(result['Value'])
+    #     if not result['OK']:
+    #       return result
+    #     username = result['Value']
+
+    # if username:
+    #   result = gOAuthManagerData.getIdPsCache(Registry.getIDsForUsername(username))
+    #   if not result['OK']:
+    #     return result
+    #   for idDict in result['Value'].values():
+    #     if self.parameters['ProviderName'] in idDict:
+    #       sessions += idDict[self.parameters['ProviderName']].keys()
+    # if not sessions:
+    #   # Create state
+    #   result = self.oauth2.createAuthRequestURL(session)
+    #   if not result['OK']:
+    #     return result
+    #   result['Value']['Status'] = 'needToAuth'
+    #   return result
     
-    return S_OK({'Status': 'ready', 'UserName': username, 'Sessions': list(set(sessions))})
+    # return S_OK({'Status': 'ready', 'UserName': username, 'Sessions': list(set(sessions))})
 
   def parseAuthResponse(self, response):
     """ Make user info dict:
@@ -97,45 +150,41 @@ class OAuth2IdProvider(IdProvider):
     for key, value in userProfile.items():
       resDict[key] = value
     
-    # result = self.__fetchTokens(tokens)  # TODO: remove here and first check AT & RT status
-    result = self.fetch(tokens)
+    # # result = self.__fetchTokens(tokens)  # TODO: remove here and first check AT & RT status
+    # result = self.fetch(tokens)
+    # if not result['OK']:
+    #   return result
+    # # resDict['Tokens'] = result['Value']
+    upDict = tokens
+    upDict['ID'] = resDict['UsrOptns']['ID']
+    result = self.sessionMananger.updateSession(session, upDict)
     if not result['OK']:
       return result
-    # resDict['Tokens'] = result['Value']
     self.log.debug('Got response dictionary:\n', pprint.pformat(resDict))
     return S_OK(resDict)
 
   def fetch(self, session):
-    """ Fetch session
-        
-        :param str,dict session: session number or dictionary
-
-        :return: S_OK()/S_ERROR()
-    """
-    return self.fetchTokensAndUpdateSession(session)
-
-  def fetchTokensAndUpdateSession(self, session):
     """ Fetch tokens and update session in DB
 
-        :param str,dict session: session number or dictionary
+        :param str,dict session: session number or dictionary with tokens
 
         :return: S_OK()/S_ERROR()
     """
     tokens = session
     if isinstance(session, str):
-      result = gSessionManager.getSessionTokens(session)
+      result = self.sessionMananger.getSessionTokens(session)
       if not result['OK']:
         return result
       tokens = result['Value']
     result = self.__fetchTokens(tokens)
     if not result['OK']:
-      kill = gSessionManager.killSession(session)
+      kill = self.sessionMananger.killSession(session)
       return result if kill['OK'] else kill
     tokens = result['Value']
     if not tokens.get('RefreshToken'):
       return S_ERROR('No refresh token found in response.')
-    return gSessionManager.updateSession(session, tokens)
-  
+    return self.sessionMananger.updateSession(session, tokens)
+
   def __fetchTokens(self, tokens):
     """ Fetch tokens
 

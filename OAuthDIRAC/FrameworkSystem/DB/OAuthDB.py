@@ -4,6 +4,8 @@
 import re
 import json
 import pprint
+import random
+import string
 
 from ast import literal_eval
 from datetime import datetime
@@ -136,215 +138,26 @@ class OAuthDB(DB):
       
     return S_OK(IdPSessionsInfo)
 
-  def getAuthorization(self, providerName, session=None):
-    """ Register new session and return dict with authorization url and session id
-    
-        :param basestring providerName: provider name
-        :param basestring session: here is able to set session id(optional)
+  def createNewSession(self, session=None):
+    """ Generates a state string to be used in authorizations
 
-        :return: S_OK(dict)/S_ERROR() -- dictionary contain Status, Session, etc.
+        :param str session: session number
+    
+        :return: S_OK(str)/S_ERROR()
     """
-    self.log.info('Get authorization for %s.' % providerName, 'Session: %s' % session if session else '')
-    result = IdProviderFactory().getIdProvider(providerName)
+    result = self._query('SELECT Session FROM `Sessions`')
     if not result['OK']:
       return result
-    __provObj = result['Value']
-    result = __provObj.checkStatus(session=session)
-    if not result['OK']:
-      return result
-    statusDict = result['Value']
-    
-    # Create new session
-    if statusDict['Status'] == 'needToAuth':
-      result = self.insertFields('Sessions', ['Session', 'Provider', 'Comment', 'LastAccess'],
-                                             [statusDict['Session'], providerName, statusDict['URL'],
-                                              'UTC_TIMESTAMP()'])
-      if not result['OK']:
-        return result
-      self.log.info(statusDict['Session'], 'session for %s created' % providerName)
-      statusDict['URL'] = '%s/auth/%s' % (getAuthAPI().strip('/'), statusDict['Session'])
-    return S_OK(statusDict)
+    allSessions = [s[0] for s in result['Value']]
+    for i in range(100):
+      num = ''.join(random.choice(string.ascii_letters + string.digits) for x in range(30))
+      if num not in allSessions:
 
-  def parseAuthResponse(self, response, session):
-    """ Fill session by user profile, tokens, comment, OIDC authorize status, etc.
-        Prepare dict with user parameters, if DN is absent there try to get it.
-        Create new or modify existend DIRAC user and store the session
-
-        :param dict response: authorization response dictionary
-        :param basestring session: session id
-
-        :return: S_OK(dict)/S_ERROR() -- dictionary contain session status, comment and user profile
-    """
-    result = self.updateSession({'Status': 'finishing'}, session=session)
-    if not result['OK']:
-      return result
-    
-    self.log.info("%s session, parse authentication response:" % session, response)
-    result = self.__parse(response, session)
-    if not result['OK']:
-      self.log.error(session, 'session error: %s' % result['Message'])
-      self.updateSession({'Status': 'failed', 'Comment': result['Message']}, session=session)
-      return result
-    parseDict, status, comment, mail = result['Value']
-
-    if mail:
-      for addresses in getEmailsForGroup('dirac_admin'):
-        result = NotificationClient().sendMail(addresses, mail['subject'], mail['body'], localAttempt=False)
-        if not result['OK']:
-          self.updateSession({'Status': 'failed', 'Comment': result['Message']}, session=session)
-          self.log.error(session, 'session error: %s' % result['Message'])
-          return result
-      self.log.info("%s session, mails to admins:", result['Value'])
-    
-    return S_OK({'Status': status, 'Comment': comment, 'UserProfile': parseDict})
-
-  def __parse(self, response, session):
-    """ Parsing response
-
-        :param dict response: authorization response dictionary
-        :param basestring session: session id
-
-        :return: S_OK(dict)/S_ERROR
-    """
-    # Search provider by session
-    result = self.__getFields(['Provider'], session=session)
-    if not result['OK']:
-      return result
-    providerName = result['Value']['Provider']
-    result = IdProviderFactory().getIdProvider(providerName)
-    if not result['OK']:
-      return result
-    __provObj = result['Value']
-    
-    # Parsing response
-    self.log.info(session, 'session, parsing "%s" authentication response.' % providerName)
-    result = __provObj.parseAuthResponse(response)
-    if not result['OK']:
-      return result
-    parseDict = result['Value']
-
-    status = 'authed'
-    comment = ''
-    __mail = {}
-    result = getUsernameForID(parseDict['UsrOptns']['ID'])
-    # TODO: if not user by ID, maybe look by DN
-    if not result['OK']:
-      groups = []  # TODO: find also groups by ID
-      for dn in parseDict['UsrOptns']['DNs']:
-        result = getGroupsForDN(dn)
-        if not result['OK']:
-          return result
-        groups = list(set(groups + result['Value']))
-      if groups:
-        status = 'authed and notify'
-        comment = 'Administrators was notified about you. Found new groups %s' % groups
-        __mail['subject'] = "[OAuthManager] User %s to be added." % parseDict['username']
-        __mail['body'] = 'User %s was authenticated by ' % parseDict['UsrOptns']['FullName']
-        __mail['body'] += providerName
-        __mail['body'] +=   "\n\nAuto updating of the user database is not allowed."
-        __mail['body'] += " New user %s to be added," % parseDict['username']
-        __mail['body'] += "with the following information:\n"
-        __mail['body'] += "\nUser name: %s\n" % parseDict['username']
-        __mail['body'] += "\nUser profile:\n%s" % pprint.pformat(parseDict['UsrOptns'])
-        __mail['body'] += "\n\n------"
-        __mail['body'] += "\n This is a notification from the DIRAC OAuthManager service, please do not reply.\n"
-      else:
-        status = 'visitor'
-        comment = 'We not found any registred DIRAC groups that mached with your profile. '
-        comment += 'So, your profile has the same access that Visitor DIRAC user.'
-        comment += 'Your ID: %s' % parseDict['UsrOptns']['ID']
-        result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'Status': status, 'Comment': comment},
-                                    session=session)
-        if not result['OK']:
-          return result
-        return S_OK((parseDict, status, comment, __mail))  # TODO: i think here is bug (need backtab)
-
-    # if not parseDict['Tokens'].get('RefreshToken'):
-    #   return S_ERROR('No refresh token found in response.')
-
-    # If current session is session to reserve
-    if re.match('^reserved_.*', session):
-      # Update status in source session
-      result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'Status': status, 'Comment': comment},
-                                  session=session.replace('reserved_', ''))
-      if not result['OK']:
-        return result
-      # Update status in current session
-      result = self.updateSession({'ID': parseDict['UsrOptns']['ID'],
-                                  #  It's added in IdProvider:
-                                  #  'ExpiresIn': parseDict['Tokens']['ExpiresIn'], 
-                                  #  'TokenType': parseDict['Tokens']['TokenType'],
-                                  #  'AccessToken': parseDict['Tokens']['AccessToken'],
-                                  #  'RefreshToken': parseDict['Tokens']['RefreshToken'],
-                                   'Status': 'reserved', 'Comment': comment},
-                                  session=session)
-      if not result['OK']:
-        return result
-      return S_OK((parseDict, status, comment, __mail))
-
-    # If current session is not reserve, search reserved session
-    result = self._query('SELECT Session FROM `Sessions` WHERE ID="%s" AND Provider="%s"' % (parseDict['UsrOptns']['ID'],
-                                                                                             providerName))
-    if not result['OK']:
-      return result
-
-    if not any(re.match('^reserved_.*', s[0]) for s in result['Value']):
-      # If no found reserved session 
-      if status == 'authed':
-        # If current session will use, need to redirect to create reserved session
-        result = self.getAuthorization(providerName, session='reserved_%s' % session)
-        if not result['OK']:
-          return result
-        url = result['Value']['URL']
-        # Save tokens to current session
-        result = self.updateSession({'ID': parseDict['UsrOptns']['ID'],
-                                    #  Allready added in IdProvider:
-                                    #  'ExpiresIn': parseDict['Tokens']['ExpiresIn'], 
-                                    #  'TokenType': parseDict['Tokens']['TokenType'],
-                                    #  'AccessToken': parseDict['Tokens']['AccessToken'],
-                                    #  'RefreshToken': parseDict['Tokens']['RefreshToken'],
-                                     'Status': 'redirect', 'Comment': comment},
-                                    session=session)
-        if not result['OK']:
-          return result
-        return S_OK((parseDict, 'redirect', url, __mail))
-
-      # If user not confirm yet, we not create reserv session
-      # # If notified, its mean that current session will not use and we can reserve it
-      # fillDict = {
-      #   'ID': parseDict['UsrOptns']['ID'],
-      #   'Status': 'reserved',
-      #   'Comment': '',
-      #   'Session': 'reserved_%s' % session,
-      #   'Provider': providerName,
-      #   'ExpiresIn': parseDict['Tokens']['ExpiresIn'],
-      #   'TokenType': parseDict['Tokens']['TokenType'],
-      #   'AccessToken': parseDict['Tokens']['AccessToken'],
-      #   'RefreshToken': parseDict['Tokens']['RefreshToken'],
-      #   'LastAccess': 'UTC_TIMESTAMP()'
-      # }
-      # result = self.insertFields('Sessions', fillDict.keys(), fillDict.values())
-      # if result['OK']:
-      #   self.log.info(session, 'session was reserved')
-      #   result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'Status': status, 'Comment': comment},
-      #                               session=session)
-      result = self.updateSession({'ID': parseDict['UsrOptns']['ID'], 'Status': status, 'Comment': comment},
-                                  session=session)
-
-      return S_OK((parseDict, status, comment, __mail)) if result['OK'] else result
-
-    # If reserved session exist
-    result = self.updateSession({'ID': parseDict['UsrOptns']['ID'],
-                                #  It's added in IdP:
-                                #  'ExpiresIn': parseDict['Tokens']['ExpiresIn'], 
-                                #  'TokenType': parseDict['Tokens']['TokenType'],
-                                #  'AccessToken': parseDict['Tokens']['AccessToken'],
-                                #  'RefreshToken': parseDict['Tokens']['RefreshToken'],
-                                 'Status': status, 'Comment': comment},
-                                session=session)
-    if not result['OK']:
-      return result
-    return S_OK((parseDict, status, comment, __mail))
+        result = self.insertFields('Sessions', ['Session', 'Provider', 'Comment', 'LastAccess'],
+                                               [statusDict['Session'], providerName, statusDict['URL'],
+                                                'UTC_TIMESTAMP()'])
+        return S_OK(num) if result['OK'] else result
+    return S_ERROR("Need to modify Session manager!")
 
   def getLinkBySession(self, session):
     """ Return authorization URL from session
@@ -365,6 +178,26 @@ class OAuthDB(DB):
       return result
     return S_OK(url)
 
+  def getReservedSession(self, userID, provider):
+    """ Find reserved session
+
+        :param str userID: user ID
+        :param str provider: provider
+
+        :return: S_OK(list)/S_ERROR()
+    """
+    reservedSessions = []
+    result = self._query('SELECT Session FROM `Sessions` WHERE ID="%s" AND Provider="%s"' % (userID,
+                                                                                             provider))
+    if not result['OK']:
+      return result
+    for data in result['Value']:
+      session = data[0]
+      if re.match('^reserved_.*', session):
+        reservedSessions.append(session)
+
+    return S_OK(list(set(reservedSessions)))
+
   def getTokensBySession(self, session):
     """ Get tokens dict by session
 
@@ -373,6 +206,18 @@ class OAuthDB(DB):
         :return: S_OK(dict)/S_ERROR()
     """
     return self.__getFields(["AccessToken", "ExpiresIn", "RefreshToken", "TokenType"], session=session)
+  
+  def getProviderBySession(self, session):
+    """ Get tokens dict by session
+
+        :param basestring session: session number
+
+        :return: S_OK(dict)/S_ERROR()
+    """
+    result = self.__getFields(['Provider'], session=session)
+    if not result['OK']:
+      return result
+    return result['Value']['Provider']
   
   def getStatusBySession(self, session):
     """ Get status dictionary by session id
@@ -472,6 +317,20 @@ class OAuthDB(DB):
       fieldsToUpdate['ExpiresIn'] = result['Value'][0][0] if result['Value'] else 'UTC_TIMESTAMP()'
     return self.updateFields('Sessions', updateDict=fieldsToUpdate, condDict=condDict, conn=conn)
   
+  def getLifetime(self, session):
+    """ Get lifetime of session
+
+        :param str session: session number
+
+        :return: S_OK(int)/S_ERROR() -- lifetime in a seconds
+    """
+    result = self.__getFields(['ExpiresIn'], session=session)
+    if result['OK']:
+      exp = result['Value']
+      result = self._query("SELECT TIME_TO_SEC(TIMEDIFF('%s', UTC_TIMESTAMP()))" % exp)
+
+    return result['Value'][0][0] if result['OK'] else result
+
   def __getFields(self, fields=None, conn=None, timeStamp=False, session=None, **kwargs):
     """ Get list of dict of fields that found in DB
 

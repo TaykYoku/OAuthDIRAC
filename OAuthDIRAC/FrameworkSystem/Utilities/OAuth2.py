@@ -91,7 +91,7 @@ class OAuth2(Session):
   def get(self, parameter):
     return self.parameters.get(parameter)
 
-  def createAuthRequestURL(self, state=None, **kwargs):
+  def createAuthRequestURL(self, state, **kwargs):
     """ Create link for authorization and state of authorization session
 
         :param str state: session number
@@ -102,7 +102,7 @@ class OAuth2(Session):
     """
     # Fill arguments for preperation URL
     kwargs['response_type'] = 'code'
-    kwargs['state'] = state or self.createState()
+    kwargs['state'] = state #or self.createState()
     kwargs['client_id'] = self.parameters['client_id']
     kwargs['redirect_uri'] = kwargs.get('redirect_uri') or self.parameters['redirect_uri']
     kwargs['scope'] = kwargs.get('scope') or self.parameters['scope'] or self.parameters['scopes_supported']
@@ -118,7 +118,8 @@ class OAuth2(Session):
     # Add arguments
     for key, value in kwargs.items():
       url += '&%s=%s' % (key, '+'.join(list(set(v.strip() for v in value))) if isinstance(value, list) else value)
-    return S_OK({'URL': url, 'Session': kwargs['state']})
+    #return S_OK({'URL': url, 'Session': kwargs['state']})
+    return S_OK(url)
 
   def parseAuthResponse(self, code):
     """ Collecting information about user
@@ -222,13 +223,6 @@ class OAuth2(Session):
       return S_OK(r.json())
     except (self.exceptions.RequestException, ValueError) as e:
       return S_ERROR("%s: %s" % (e.message, r.text))
-
-  def createState(self):
-    """ Generates a state string to be used in authorizations
-    
-        :return: str
-    """
-    return ''.join(random.choice(string.ascii_letters + string.digits) for x in range(30))
 
   def getWellKnownDict(self, url=None, issuer=None):
     """ Returns OpenID Connect metadata related to the specified authorization server
