@@ -38,7 +38,7 @@ class OAuth2IdProvider(IdProvider):
     if not result['OK']:
       return result
     
-    result = self.sessionMananger.createNewSession(session=session)
+    result = self.sessionManager.createNewSession(session=session)
     if not result['OK']:
       return result
     session = result['Value']
@@ -46,10 +46,10 @@ class OAuth2IdProvider(IdProvider):
     result = self.oauth2.createAuthRequestURL(session)
     if result['OK']:
       url = result['Value']
-      result = self.sessionMananger.updateSession(session, {'Provider': parameters['ProviderName'],
+      result = self.sessionManager.updateSession(session, {'Provider': parameters['ProviderName'],
                                                             'Comment': url})
     if not result['OK']:
-      kill = self.sessionMananger.killSession(session)
+      kill = self.sessionManager.killSession(session)
       return result if kill['OK'] else kill
     
     return S_OK(session)
@@ -69,12 +69,12 @@ class OAuth2IdProvider(IdProvider):
       return result
 
     if session:
-      result = self.sessionMananger.getLifetime(session)
+      result = self.sessionManager.getLifetime(session)
       if not result['OK']:
         return result
       if result['Value'] < 10 * 60:
         self.log.debug('%s tokens are expired, try to refresh' % session)
-        result = self.sessionMananger.getSessionTokens(session)
+        result = self.sessionManager.getSessionTokens(session)
         if not result['OK']:
           return result
         tokens = result['Value']
@@ -83,8 +83,8 @@ class OAuth2IdProvider(IdProvider):
           tokens = result['Value']
           if not tokens.get('RefreshToken'):
             return S_ERROR('No refresh token found in response.')
-          return self.sessionMananger.updateSession(session, tokens)
-        kill = self.sessionMananger.killSession(session)
+          return self.sessionManager.updateSession(session, tokens)
+        kill = self.sessionManager.killSession(session)
         return S_OK({'Status': 'fail', 'Comment': result['Message']}) if kill['OK'] else kill
 
       return S_OK({'Status': 'ready'})
@@ -157,7 +157,7 @@ class OAuth2IdProvider(IdProvider):
     # # resDict['Tokens'] = result['Value']
     upDict = tokens
     upDict['ID'] = resDict['UsrOptns']['ID']
-    result = self.sessionMananger.updateSession(session, upDict)
+    result = self.sessionManager.updateSession(session, upDict)
     if not result['OK']:
       return result
     self.log.debug('Got response dictionary:\n', pprint.pformat(resDict))
@@ -172,18 +172,18 @@ class OAuth2IdProvider(IdProvider):
     """
     tokens = session
     if isinstance(session, str):
-      result = self.sessionMananger.getSessionTokens(session)
+      result = self.sessionManager.getSessionTokens(session)
       if not result['OK']:
         return result
       tokens = result['Value']
     result = self.__fetchTokens(tokens)
     if not result['OK']:
-      kill = self.sessionMananger.killSession(session)
+      kill = self.sessionManager.killSession(session)
       return result if kill['OK'] else kill
     tokens = result['Value']
     if not tokens.get('RefreshToken'):
       return S_ERROR('No refresh token found in response.')
-    return self.sessionMananger.updateSession(session, tokens)
+    return self.sessionManager.updateSession(session, tokens)
 
   def __fetchTokens(self, tokens):
     """ Fetch tokens
@@ -300,7 +300,7 @@ class OAuth2IdProvider(IdProvider):
     """
     tokens = session
     if isinstance(session, str):
-      result = self.sessionMananger.getSessionTokens(session)
+      result = self.sessionManager.getSessionTokens(session)
       if not result['OK']:
         return result
       tokens = result['Value']
@@ -311,10 +311,10 @@ class OAuth2IdProvider(IdProvider):
         tokens = result['Value']
         result = self.oauth2.getUserProfile(result['Value']['AccessToken'])
     if not result['OK']:
-      kill = self.sessionMananger.killSession(session)
+      kill = self.sessionManager.killSession(session)
       return result if kill['OK'] else kill
     userProfile = result['Value']
-    result = self.sessionMananger.updateSession(session, tokens)
+    result = self.sessionManager.updateSession(session, tokens)
     if not result['OK']:
       return result
     return self.__parseUserProfile(userProfile)
@@ -328,7 +328,7 @@ class OAuth2IdProvider(IdProvider):
     """
     tokens = session
     if isinstance(session, str):
-      result = self.sessionMananger.getSessionTokens(session)
+      result = self.sessionManager.getSessionTokens(session)
       if not result['OK']:
         return result
       tokens = result['Value']
