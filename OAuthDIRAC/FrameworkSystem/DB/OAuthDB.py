@@ -101,15 +101,13 @@ class OAuthDB(DB):
       if ID not in IdPSessionsInfo:
         IdPSessionsInfo[ID] = {'Providers': {}, 'DNs': {}}
       if idP not in IdPSessionsInfo[ID]['Providers']:
-        result = IdProviderFactory().getIdProvider(idP)
+        result = IdProviderFactory().getIdProvider(idP, sessionMananger=self)
         if not result['OK']:
           return result
-        __provObj = result['Value']
-        result = __provObj.getUserProfile(session)
+        provObj = result['Value']
+        result = provObj.getUserProfile(session)
         if not result['OK']:
           self.log.error(result['Message'])
-          kill = self.killSession(session)
-          self.log.warn('Cannot get user profile for %s session, removed.' % session, kill.get('Value') or kill.get('Message'))
           continue
         userProfile = result['Value']['UsrOptns']
         result = self.getTokensBySession(session)

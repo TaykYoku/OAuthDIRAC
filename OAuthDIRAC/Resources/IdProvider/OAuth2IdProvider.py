@@ -300,7 +300,7 @@ class OAuth2IdProvider(IdProvider):
     """
     tokens = session
     if isinstance(session, str):
-      result = gSessionManager.getSessionTokens(session)
+      result = self.sessionMananger.getSessionTokens(session)
       if not result['OK']:
         return result
       tokens = result['Value']
@@ -311,10 +311,10 @@ class OAuth2IdProvider(IdProvider):
         tokens = result['Value']
         result = self.oauth2.getUserProfile(result['Value']['AccessToken'])
     if not result['OK']:
-      kill = gSessionManager.killSession(session)
+      kill = self.sessionMananger.killSession(session)
       return result if kill['OK'] else kill
     userProfile = result['Value']
-    result = gSessionManager.updateSession(session, tokens)
+    result = self.sessionMananger.updateSession(session, tokens)
     if not result['OK']:
       return result
     return self.__parseUserProfile(userProfile)
@@ -328,7 +328,7 @@ class OAuth2IdProvider(IdProvider):
     """
     tokens = session
     if isinstance(session, str):
-      result = gSessionManager.getSessionTokens(session)
+      result = self.sessionMananger.getSessionTokens(session)
       if not result['OK']:
         return result
       tokens = result['Value']
