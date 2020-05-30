@@ -101,7 +101,7 @@ class OAuthDB(DB):
       if ID not in IdPSessionsInfo:
         IdPSessionsInfo[ID] = {'Providers': {}, 'DNs': {}}
       if idP not in IdPSessionsInfo[ID]['Providers']:
-        result = IdProviderFactory().getIdProvider(idP, sessionMananger=self)
+        result = IdProviderFactory().getIdProvider(idP, sessionManager=self)
         if not result['OK']:
           return result
         provObj = result['Value']
@@ -136,26 +136,31 @@ class OAuthDB(DB):
       
     return S_OK(IdPSessionsInfo)
 
-  def createNewSession(self, session=None):
+  def createNewSession(self, provider, session=None):
     """ Generates a state string to be used in authorizations
 
+        :param str provider: provider
         :param str session: session number
     
         :return: S_OK(str)/S_ERROR()
     """
-    result = self._query('SELECT Session FROM `Sessions`')
-    if not result['OK']:
-      return result
-    allSessions = [s[0] for s in result['Value']]
-    for i in range(100):
-      num = ''.join(random.choice(string.ascii_letters + string.digits) for x in range(30))
-      if num not in allSessions:
+    if not session:
+      result = self._query('SELECT Session FROM `Sessions`')
+      if not result['OK']:
+        return result
+      allSessions = [s[0] for s in result['Value']]
+      for i in range(100):
+        num = ''.join(random.choice(string.ascii_letters + string.digits) for x in range(30))
+        if num not in allSessions:
+          session = num
+          break
 
-        result = self.insertFields('Sessions', ['Session', 'Provider', 'Comment', 'LastAccess'],
-                                               [statusDict['Session'], providerName, statusDict['URL'],
-                                                'UTC_TIMESTAMP()'])
-        return S_OK(num) if result['OK'] else result
-    return S_ERROR("Need to modify Session manager!")
+    if not session:
+      return S_ERROR("Need to modify Session manager!")
+
+    result = self.insertFields('Sessions', ['Session', 'Provider', 'LastAccess'],
+                                           [session, provider, 'UTC_TIMESTAMP()'])
+    return S_OK(num) if result['OK'] else result
 
   def getLinkBySession(self, session):
     """ Return authorization URL from session
