@@ -84,6 +84,7 @@ class OAuthManagerHandler(RequestHandler):
         return result
       idDict = result['Value']
     cls.__writeCache(idDict, 3600 * 24)
+    return S_OK()
 
   @classmethod
   def initializeHandler(cls, serviceInfo):
