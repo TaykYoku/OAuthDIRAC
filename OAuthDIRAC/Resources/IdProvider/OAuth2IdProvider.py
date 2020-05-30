@@ -34,11 +34,12 @@ class OAuth2IdProvider(IdProvider):
 
         :return: S_OK(str)/S_ERROR()
     """
+    provider = self.parameters['ProviderName']
     result = self.isSessionManagerAble()
     if not result['OK']:
       return result
     
-    result = self.sessionManager.createNewSession(self.parameters['ProviderName'], session=session)
+    result = self.sessionManager.createNewSession(provider, session=session)
     if not result['OK']:
       return result
     session = result['Value']
@@ -46,7 +47,7 @@ class OAuth2IdProvider(IdProvider):
     result = self.oauth2.createAuthRequestURL(session)
     if result['OK']:
       url = result['Value']
-      result = self.sessionManager.updateSession(session, {'Provider': parameters['ProviderName'],
+      result = self.sessionManager.updateSession(session, {'Provider': provider,
                                                             'Comment': url})
     if not result['OK']:
       kill = self.sessionManager.killSession(session)
