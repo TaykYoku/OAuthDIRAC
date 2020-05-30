@@ -46,7 +46,7 @@ class OAuthManagerHandler(RequestHandler):
   __db = None
   __IdPsCache = DictCache()
 
-   @classmethod
+  @classmethod
   @gIdPsCacheSync
   def __readCache(cls, userID=None):
     """ Get cache information
@@ -57,7 +57,7 @@ class OAuthManagerHandler(RequestHandler):
     """
     return cls.__IdPsCache.getDict(userID) if userID else cls.__IdPsCache.getDict()
 
-   @classmethod
+  @classmethod
   @gIdPsCacheSync
   def __writeCache(cls, data, time):
     """ Get cache information
