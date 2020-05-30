@@ -123,7 +123,7 @@ class OAuth2IdProvider(IdProvider):
     
     # return S_OK({'Status': 'ready', 'UserName': username, 'Sessions': list(set(sessions))})
 
-  def parseAuthResponse(self, response):
+  def parseAuthResponse(self, response, session):
     """ Make user info dict:
           - username(preferd user name)
           - nosupport(VOs in response that not in DIRAC)
@@ -132,6 +132,7 @@ class OAuth2IdProvider(IdProvider):
           - Groups(New DIRAC groups that need created)
 
         :param dict response: response on request to get user profile
+        :param str session: session
 
         :return: S_OK(dict)/S_ERROR()
     """

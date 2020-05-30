@@ -230,7 +230,7 @@ class OAuthManagerHandler(RequestHandler):
     provObj = result['Value']
 
     # Parsing response
-    result = provObj.parseAuthResponse(response)
+    result = provObj.parseAuthResponse(response, session)
     if not result['OK']:
       return result
     parseDict = result['Value']
