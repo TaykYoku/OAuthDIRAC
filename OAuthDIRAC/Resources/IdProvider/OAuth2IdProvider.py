@@ -38,7 +38,7 @@ class OAuth2IdProvider(IdProvider):
     if not result['OK']:
       return result
     
-    result = self.sessionManager.createNewSession(parameters['ProviderName'], session=session)
+    result = self.sessionManager.createNewSession(self.parameters['ProviderName'], session=session)
     if not result['OK']:
       return result
     session = result['Value']
