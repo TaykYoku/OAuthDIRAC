@@ -46,8 +46,27 @@ class OAuthManagerHandler(RequestHandler):
   __db = None
   __IdPsCache = DictCache()
 
-  @classmethod
   @gIdPsCacheSync
+  def __readCache(self, userID=None):
+    """ Get cache information
+
+        :param str userID: user ID
+
+        :return: dict
+    """
+    return self.__IdPsCache.getDict(userID) if userID else self.__IdPsCache.getDict()
+
+  @gIdPsCacheSync
+  def __writeCache(self, data, time)
+    """ Get cache information
+
+        :param dict data: ID information data
+        :param int time: lifetime
+    """
+    for oid, info in data.items():
+      self.__IdPsCache.add(oid, time, value=info)
+
+  @classmethod
   def __refreshIdPsIDsCache(cls, idPs=None, IDs=None, idDict=None):
     """ Update information about sessions
 
@@ -62,9 +81,7 @@ class OAuthManagerHandler(RequestHandler):
       if not result['OK']:
         return result
       idDict = result['Value']
-    for oid, data in idDict.items():
-      cls.__IdPsCache.add(oid, 3600 * 24, value=data)
-    return result
+    cls.__writeCache(idDict, 3600 * 24)
 
   @classmethod
   def initializeHandler(cls, serviceInfo):
@@ -76,7 +93,6 @@ class OAuthManagerHandler(RequestHandler):
     #return cls.__refreshIdPsIDsCache()
     return S_OK()
 
-  @gIdPsCacheSync
   def __checkAuth(self, session=None):
     """ Check authorization rules
 
@@ -94,7 +110,7 @@ class OAuthManagerHandler(RequestHandler):
     
     if session:
       for r in [True, False]:
-        idpDict = self.__IdPsCache.getDict()
+        idpDict = self.__readCache()
         for oid in userIDs:
           if oid in idpDict:
             for prov in idpDict[oid].get('Provisers', []):
@@ -109,7 +125,6 @@ class OAuthManagerHandler(RequestHandler):
     return S_OK(userIDs)
 
   types_getIdPsIDs = []
-  @gIdPsCacheSync
   def export_getIdPsIDs(self):
     """ Return fresh info from identity providers about users with actual sessions
 
@@ -119,11 +134,11 @@ class OAuthManagerHandler(RequestHandler):
     if not res['OK']:
       return res
     if not res["Value"]:
-      return S_OK(self.__IdPsCache.getDict())
+      return S_OK(self.__readCache())
     
     data = {}
     for oid in result['Value']:
-      idDict = self.__IdPsCache.get(oid)
+      idDict = self.__readCache(userID=oid)
       if idDict:
         data[oid] = idDict
     return S_OK(data)
