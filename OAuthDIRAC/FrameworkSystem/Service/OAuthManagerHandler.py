@@ -159,7 +159,8 @@ class OAuthManagerHandler(RequestHandler):
     if not result['OK']:
       return S_ERROR('Cannot create authority request URL:', result['Message'])
     session = result['Value']
-    return S_OK({'Status': 'needToAuth', 'URL': '%s/auth/%s' % (getAuthAPI().strip('/'), session)})
+    return S_OK({'Status': 'needToAuth', 'Session': session,
+                 'URL': '%s/auth/%s' % (getAuthAPI().strip('/'), session)})
   
   types_parseAuthResponse = [dict, basestring]
 
