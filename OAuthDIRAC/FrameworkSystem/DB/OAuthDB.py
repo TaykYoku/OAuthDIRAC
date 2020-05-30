@@ -159,7 +159,7 @@ class OAuthDB(DB):
 
     result = self.insertFields('Sessions', ['Session', 'Provider', 'LastAccess'],
                                            [session, provider, 'UTC_TIMESTAMP()'])
-    return S_OK(num) if result['OK'] else result
+    return S_OK(session) if result['OK'] else result
 
   def getLinkBySession(self, session):
     """ Return authorization URL from session
