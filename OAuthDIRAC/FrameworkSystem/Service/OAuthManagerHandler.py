@@ -178,8 +178,7 @@ class OAuthManagerHandler(RequestHandler):
 
     result = self.__parseAuthResponse(response, session)
     if not result['OK']:
-      cansel = self.__db.updateSession({'Status': 'failed', 'Comment': result['Message']},
-                                       session=session)
+      cansel = self.__db.updateSession(session, {'Status': 'failed', 'Comment': result['Message']})
       return result if cansel['OK'] else cansel
 
     if result['Value']['Status'] in ['authed', 'redirect']:
@@ -199,7 +198,7 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    result = self.__db.updateSession({'Status': 'finishing'}, session=session)
+    result = self.__db.updateSession(session, {'Status': 'finishing'})
     if not result['OK']:
       return result
 
@@ -229,13 +228,12 @@ class OAuthManagerHandler(RequestHandler):
       # This session to reserve?
       if re.match('^reserved_.*', session):
         # Update status in source session
-        result = self.__db.updateSession({'Status': status},
-                                          session=session.replace('reserved_', ''))
+        result = self.__db.updateSession(session.replace('reserved_', ''), {'Status': status})
         if not result['OK']:
           return result
         
         # Update status in current session
-        result = self.__db.updateSession({'Status': 'reserved'}, session=session)
+        result = self.__db.updateSession(session, {'Status': 'reserved'})
         if not result['OK']:
           return result
 
@@ -255,7 +253,7 @@ class OAuthManagerHandler(RequestHandler):
           status = 'redirect'
           comment = '%s/auth/%s' % (getAuthAPI().strip('/'), session)
 
-          result = self.__db.updateSession({'Status': status}, session=session)
+          result = self.__db.updateSession(session, {'Status': status})
           if not result['OK']:
             return result
 
@@ -310,7 +308,7 @@ class OAuthManagerHandler(RequestHandler):
         :return: S_OK()/S_ERROR()
     """
     res = self.__checkAuth(session)
-    return self.__db.updateSession(fieldsToUpdate, session=session) if res['OK'] else res
+    return self.__db.updateSession(session, fieldsToUpdate) if res['OK'] else res
 
   types_killSession = [basestring]
 

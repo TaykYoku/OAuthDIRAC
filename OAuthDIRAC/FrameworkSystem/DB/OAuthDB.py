@@ -176,7 +176,7 @@ class OAuthDB(DB):
     url = result['Value']['Comment']
     if not url:
       return S_ERROR('No link found.')
-    result = self.updateSession({'Status': 'in progress', 'Comment': ''}, session=session)
+    result = self.updateSession(session, {'Status': 'in progress', 'Comment': ''})
     if not result['OK']:
       return result
     return S_OK(url)
@@ -297,23 +297,26 @@ class OAuthDB(DB):
     self.log.debug('%s log out:', result.get('Message') or result.get('Value'))
     return self.killSession(session)
   
-  def updateSession(self, fieldsToUpdate=None, conn=None, condDict=None, session=None):
+  def updateSession(self, session, fieldsToUpdate=None, conn=None, condDict=None):
     """ Update session record
 
+        :params basestring session: session id
         :param dict fieldsToUpdate: fields content that need to update
         :param basestring conn: search filter
         :param dict condDict: parameters that need add to search filter
-        :params basestring session: session id
 
         :return: S_OK()/S_ERROR()
     """
-    condDict = {'Session': session} if not condDict and session else condDict
-    self.log.verbose(session or '', 'session update')
+    self.log.verbose(session, 'session update..')
+    condDict = condDict or {}
+    condDict['Session'] = session
+    
     fieldsToUpdate = fieldsToUpdate or {}
     fieldsToUpdate['LastAccess'] = 'UTC_TIMESTAMP()'
+
     # Convert seconds to datetime
     if 'ExpiresIn' in fieldsToUpdate and isinstance(fieldsToUpdate['ExpiresIn'], int):
-      self.log.debug(session or '', 'session, convert access token live time %s seconds to date.' % fieldsToUpdate['ExpiresIn'])
+      self.log.debug(session, 'session, convert access token live time %s seconds to date.' % fieldsToUpdate['ExpiresIn'])
       result = self._query("SELECT ADDDATE(UTC_TIMESTAMP(), INTERVAL %s SECOND)" % fieldsToUpdate['ExpiresIn'])
       if not result['OK']:
         return result

@@ -48,7 +48,7 @@ class OAuth2IdProvider(IdProvider):
     if result['OK']:
       url = result['Value']
       result = self.sessionManager.updateSession(session, {'Provider': provider,
-                                                            'Comment': url})
+                                                           'Comment': url})
     if not result['OK']:
       kill = self.sessionManager.killSession(session)
       return result if kill['OK'] else kill
