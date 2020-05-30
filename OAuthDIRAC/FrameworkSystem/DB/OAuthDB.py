@@ -91,38 +91,46 @@ class OAuthDB(DB):
         :return: S_OK(dict)/S_ERROR()
     """
     IdPSessionsInfo = {}
-    result = self._query("SELECT DISTINCT ID, Provider, Session FROM `Sessions`")
+    conn = []
+    if IDs:
+      conn.append('ID IN ("%s") ' % ", ".join(IDs))
+    if idPs:
+      conn.append('Provider IN ("%s") ' % ", ".join(idPs))
+    where = 'WHERE %s' % ' AND '.join(conn) if conn else ''
+    result = self._query("SELECT DISTINCT ID, Provider, Session FROM `Sessions` %s" % where)
+    #result = self.__getFields(session=session, conn=' AND '.join(conn))
     if not result['OK']:
       return result
     for ID, idP, session in result['Value']:
-      if (idPs and idP not in idPs) or (IDs and ID not in IDs):
-        continue
+      # if (idPs and idP not in idPs) or (IDs and ID not in IDs):
+      #   continue
       if ID not in IdPSessionsInfo:
         IdPSessionsInfo[ID] = {'Providers': {}, 'DNs': {}}
       if idP not in IdPSessionsInfo[ID]['Providers']:
-        result = IdProviderFactory().getIdProvider(idP, sessionManager=self)
-        if not result['OK']:
-          return result
-        provObj = result['Value']
-        result = provObj.getUserProfile(session)
-        if not result['OK']:
-          self.log.error(result['Message'])
-          continue
-        userProfile = result['Value']['UsrOptns']
-        result = self.getSessionTokens(session)
-        if not result['OK']:
-          return result
-        tokens = result['Value']
-        if not tokens:
-          result = self.killSession(session)
-          self.log.warn('Not found tokens for %s session, removed.' % session, result.get('Value') or result.get('Message'))
-          continue
-        IdPSessionsInfo[ID]['Providers'][idP] = {session: tokens}
-        # Fill user profile
-        for key, value in userProfile.items():
-          if key not in IdPSessionsInfo[ID]:
-            IdPSessionsInfo[ID][key] = value
-      else:
+        
+      #   result = IdProviderFactory().getIdProvider(idP, sessionManager=self)
+      #   if not result['OK']:
+      #     return result
+      #   provObj = result['Value']
+      #   result = provObj.getUserProfile(session)
+      #   if not result['OK']:
+      #     self.log.error(result['Message'])
+      #     continue
+      #   userProfile = result['Value']['UsrOptns']
+      #   result = self.getSessionTokens(session)
+      #   if not result['OK']:
+      #     return result
+      #   tokens = result['Value']
+      #   if not tokens:
+      #     result = self.killSession(session)
+      #     self.log.warn('Not found tokens for %s session, removed.' % session, result.get('Value') or result.get('Message'))
+      #     continue
+      #   IdPSessionsInfo[ID]['Providers'][idP] = {session: tokens}
+      #   # Fill user profile
+      #   for key, value in userProfile.items():
+      #     if key not in IdPSessionsInfo[ID]:
+      #       IdPSessionsInfo[ID][key] = value
+      # else:
         result = self.getSessionTokens(session)
         if not result['OK']:
           return result
@@ -189,14 +197,14 @@ class OAuthDB(DB):
         :return: S_OK(list)/S_ERROR()
     """
     reservedSessions = []
-    result = self._query('SELECT Session FROM `Sessions` WHERE ID="%s" AND Provider="%s"' % (userID,
-                                                                                             provider))
+    cmd = 'SELECT Session FROM `Sessions` WHERE Status="reserved" AND'
+    result = self._query('%s ID="%s" AND Provider="%s"' % (cmd, userID, provider))
     if not result['OK']:
       return result
     for data in result['Value']:
       session = data[0]
-      if re.match('^reserved_.*', session):
-        reservedSessions.append(session)
+      #if re.match('^reserved_.*', session):
+      reservedSessions.append(session)
 
     return S_OK(list(set(reservedSessions)))
 

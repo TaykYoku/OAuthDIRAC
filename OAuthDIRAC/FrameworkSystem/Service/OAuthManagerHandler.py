@@ -55,11 +55,11 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: dict
     """
-    return cls.__IdPsCache.getDict(userID) if userID else cls.__IdPsCache.getDict()
+    return cls.__IdPsCache.get(userID) if userID else cls.__IdPsCache.getDict()
 
   @classmethod
   @gIdPsCacheSync
-  def __writeCache(cls, data, time):
+  def __writeCache(cls, data, time=3600 * 24):
     """ Get cache information
 
         :param dict data: ID information data
@@ -69,7 +69,7 @@ class OAuthManagerHandler(RequestHandler):
       cls.__IdPsCache.add(oid, time, value=info)
 
   @classmethod
-  def __refreshIdPsIDsCache(cls, idPs=None, IDs=None, idDict=None):
+  def __refreshIdPsIDsCache(cls, idPs=None, IDs=None):
     """ Update information about sessions
 
         :param list idPs: list of identity providers that sessions need to update, if None - update all
@@ -78,12 +78,10 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK()/S_ERROR()
     """
-    if not idDict:
-      result = cls.__db.updateIdPSessionsInfoCache(idPs=idPs, IDs=IDs)
-      if not result['OK']:
-        return result
-      idDict = result['Value']
-    cls.__writeCache(idDict, 3600 * 24)
+    result = cls.__db.updateIdPSessionsInfoCache(idPs=idPs, IDs=IDs)
+    if not result['OK']:
+      return result
+    cls.__writeCache(result['Value'])
     return S_OK()
 
   @classmethod
@@ -202,11 +200,25 @@ class OAuthManagerHandler(RequestHandler):
       return result if cansel['OK'] else cansel
 
     if result['Value']['Status'] in ['authed', 'redirect']:
-      refresh = self.__refreshIdPsIDsCache(IDs=[result['Value']['UserProfile']['UsrOptns']['ID']])
+      profile = result['Value']['UserProfile']['UsrOptns']
+      self.__updateIDCache({profile['ID']: {'DNs': profile['DNs']}})
+      refresh = self.__refreshIdPsIDsCache(idDict=data)
       if not refresh['OK']:
         return refresh
       result['Value']['sessionIDDict'] = refresh['Value']
     return result
+  
+  def __updateIDCache(self, userID, data):
+    """ Update ID cache with new data
+
+        :param str userID: user ID
+        :param dict data: new information
+    """
+    idCache = self.__readCache(userID=userID)
+    for k, v in data:
+      if k in idCache:
+        idCache[k] = v
+    self.__writeCache(idCache)
   
   def __parseAuthResponse(self, response, session):
     """ Fill session by user profile, tokens, comment, OIDC authorize status, etc.
