@@ -143,7 +143,7 @@ class OAuthManagerHandler(RequestHandler):
         return res
     
     gLogger.info('Get authorization for %s.' % providerName, 'Session: %s' % session if session else '')
-    result = IdProviderFactory().getIdProvider(providerName, sessionMananger=self.__db)
+    result = IdProviderFactory().getIdProvider(providerName, sessionManager=self.__db)
     if not result['OK']:
       return result
     provObj = result['Value']
@@ -208,7 +208,7 @@ class OAuthManagerHandler(RequestHandler):
     if not result['OK']:
       return result
     provider = result['Value']
-    result = IdProviderFactory().getIdProvider(provider, sessionMananger=self.__db)
+    result = IdProviderFactory().getIdProvider(provider, sessionManager=self.__db)
     if not result['OK']:
       return result
     provObj = result['Value']
