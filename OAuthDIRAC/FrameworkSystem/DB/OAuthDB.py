@@ -109,7 +109,7 @@ class OAuthDB(DB):
           self.log.error(result['Message'])
           continue
         userProfile = result['Value']['UsrOptns']
-        result = self.getTokensBySession(session)
+        result = self.getSessionTokens(session)
         if not result['OK']:
           return result
         tokens = result['Value']
@@ -123,7 +123,7 @@ class OAuthDB(DB):
           if key not in IdPSessionsInfo[ID]:
             IdPSessionsInfo[ID][key] = value
       else:
-        result = self.getTokensBySession(session)
+        result = self.getSessionTokens(session)
         if not result['OK']:
           return result
         tokens = result['Value']
@@ -200,7 +200,7 @@ class OAuthDB(DB):
 
     return S_OK(list(set(reservedSessions)))
 
-  def getTokensBySession(self, session):
+  def getSessionTokens(self, session):
     """ Get tokens dict by session
 
         :param basestring session: session number
@@ -289,7 +289,7 @@ class OAuthDB(DB):
     result = IdProviderFactory().getIdProvider(provider)
     if result['OK']:
       providerObj = result['Value']
-      result = self.getTokensBySession(session)
+      result = self.getSessionTokens(session)
       if not result['OK']:
         return result
       result = providerObj.logOut(result['Value'])

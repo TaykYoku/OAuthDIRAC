@@ -392,7 +392,7 @@ class OAuthManagerHandler(RequestHandler):
         :return: S_OK(dict)/S_ERROR()
     """
     res = self.__checkAuth(session)
-    return self.__db.getTokensBySession(session) if res['OK'] else res
+    return self.__db.getSessionTokens(session) if res['OK'] else res
 
   @staticmethod
   def __cleanOAuthDB():

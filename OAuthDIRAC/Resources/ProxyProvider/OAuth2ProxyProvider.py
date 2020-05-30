@@ -70,7 +70,7 @@ class OAuth2ProxyProvider(ProxyProvider):
     for session in result['Value']['Sessions']:
       self.log.verbose('For proxy request use session:', session)
       # Get tokens
-      result = gSessionManager.getTokensBySession(session)
+      result = gSessionManager.getSessionTokens(session)
       if not result['OK']:
         return result
       tokens = result['Value']
