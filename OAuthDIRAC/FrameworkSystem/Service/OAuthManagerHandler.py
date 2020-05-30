@@ -201,7 +201,7 @@ class OAuthManagerHandler(RequestHandler):
 
     if result['Value']['Status'] in ['authed', 'redirect']:
       profile = result['Value']['UserProfile']['UsrOptns']
-      self.__updateIDCache(profile['ID'], {'DNs': profile['DNs']}})
+      self.__updateIDCache(profile['ID'], {'DNs': profile['DNs']})
       refresh = self.__refreshIdPsIDsCache(idDict=data)
       if not refresh['OK']:
         return refresh
