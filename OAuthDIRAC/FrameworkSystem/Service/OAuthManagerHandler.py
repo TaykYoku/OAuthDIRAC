@@ -57,7 +57,7 @@ class OAuthManagerHandler(RequestHandler):
     return self.__IdPsCache.getDict(userID) if userID else self.__IdPsCache.getDict()
 
   @gIdPsCacheSync
-  def __writeCache(self, data, time)
+  def __writeCache(self, data, time):
     """ Get cache information
 
         :param dict data: ID information data
