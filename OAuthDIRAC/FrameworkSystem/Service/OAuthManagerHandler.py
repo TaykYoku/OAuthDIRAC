@@ -235,7 +235,7 @@ class OAuthManagerHandler(RequestHandler):
       return res
     ids = res["Value"]
 
-    sDict = self.__getSessions(session=session)
+    sDict = self.__getSessions(session=session) or {}
     if not ids:
       return S_OK(sDict)
     

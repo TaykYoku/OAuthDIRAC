@@ -130,7 +130,7 @@ class OAuthManagerData(object):
     """
     from DIRAC.Core.DISET.RPCClient import RPCClient
     result = RPCClient('Framework/OAuthManager').getSessionsInfo(session)
-    if result['OK']:
+    if result['OK'] and result['Value']:
       self.updateSessions(result['Value'])
     return result
   
@@ -143,7 +143,7 @@ class OAuthManagerData(object):
     """
     from DIRAC.Core.DISET.RPCClient import RPCClient
     result = RPCClient('Framework/OAuthManager').getIdProfiles(userID)
-    if result['OK']:
+    if result['OK'] and result['Value']:
       self.updateProfiles(result['Value'])
     return result
 
