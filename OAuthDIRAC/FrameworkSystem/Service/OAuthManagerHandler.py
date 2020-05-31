@@ -16,7 +16,9 @@ from OAuthDIRAC.FrameworkSystem.DB.OAuthDB import OAuthDB
 __RCSID__ = "$Id$"
 
 
-gIdPsCacheSync = ThreadSafe.Synchronizer()
+# gIdPsCacheSync = ThreadSafe.Synchronizer()
+gCacheSessions = ThreadSafe.Synchronizer()
+gCacheProfiles = ThreadSafe.Synchronizer()
 
 
 class OAuthManagerHandler(RequestHandler):
@@ -41,48 +43,118 @@ class OAuthManagerHandler(RequestHandler):
         },
         <ID2>: { ... },
       }
+
+      __cacheSessions cache, with next structure:
+      {
+        <session1>: {
+          ID: ..,
+          Provider: ..,
+          Tokens: { <tokens> }
+        },
+        <session2>: { ... }
+      }
+
+      __cacheProfiles cache, with next structure:
+      {
+        <ID1>: {
+          Provider: ..,
+          Sessions: ..,
+          DNs: {
+            <DN1>: {
+              ProxyProvider: [ <proxy providers> ],
+              VOMSRoles: [ <VOMSRoles> ],
+              ...
+            },
+            <DN2>: { ... },
+          }
+        },
+        <ID2>: { ... }
+      }
   """
 
   __db = None
-  __IdPsCache = DictCache()
+  # __IdPsCache = DictCache()
+  __cacheSessions = DictCache()
+  __cacheProfiles = DictCache()
 
   @classmethod
-  @gIdPsCacheSync
-  def __readCache(cls, userID=None):
+  @gCacheProfiles
+  def __getProfiles(cls, userID=None):
     """ Get cache information
 
         :param str userID: user ID
 
         :return: dict
     """
-    return cls.__IdPsCache.get(userID) if userID else cls.__IdPsCache.getDict()
+    if userID:
+      return cls.__cacheProfiles.get(userID)
+    return cls.__cacheProfiles.getDict()
 
   @classmethod
-  @gIdPsCacheSync
-  def __writeCache(cls, data, time=3600 * 24):
+  @gCacheProfiles
+  def __updateProfiles(cls, data, time=3600 * 24):
     """ Get cache information
 
         :param dict data: ID information data
         :param int time: lifetime
     """
     for oid, info in data.items():
-      cls.__IdPsCache.add(oid, time, value=info)
+      cls.__cacheProfiles.add(oid, time, value=info)
 
   @classmethod
-  def __refreshIdPsIDsCache(cls, idPs=None, IDs=None):
+  @gCacheSessions
+  def __getSessions(cls, session=None):
+    """ Get cache information
+
+        :param str userID: user ID
+
+        :return: dict
+    """
+    if session:
+      return cls.__cacheSessions.get(session)
+    return cls.__cacheSessions.getDict()
+
+  @classmethod
+  @gCacheSessions
+  def __updateSessions(cls, data, time=3600 * 24):
+    """ Get cache information
+
+        :param dict data: ID information data
+        :param int time: lifetime
+    """
+    for oid, info in data.items():
+      cls.__cacheSessions.add(oid, time, value=info)
+
+  @classmethod
+  def __refreshSessions(cls, idPs=None, IDs=None, session=None):
     """ Update information about sessions
 
         :param list idPs: list of identity providers that sessions need to update, if None - update all
         :param list IDs: list of IDs that need to update, if None - update all
-        :param dict idDict: information that need to update
+        :param str session: session to update
 
         :return: S_OK()/S_ERROR()
     """
-    result = cls.__db.updateIdPSessionsInfoCache(idPs=idPs, IDs=IDs)
-    if not result['OK']:
-      return result
-    cls.__writeCache(result['Value'])
-    return S_OK()
+    result = cls.__db.getSessionsInfo(idPs=idPs, IDs=IDs, session=session)
+    if result['OK']:
+      cls.__updateSessions(result['Value'])
+    return result
+
+  # @classmethod
+  # def __refreshIdPsIDsCache(cls, idPs=None, IDs=None):
+  #   """ Update information about sessions
+
+  #       :param list idPs: list of identity providers that sessions need to update, if None - update all
+  #       :param list IDs: list of IDs that need to update, if None - update all
+  #       :param dict idDict: information that need to update
+
+  #       :return: S_OK()/S_ERROR()
+  #   """
+  #   result = cls.__db.updateIdPSessionsInfoCache(idPs=idPs, IDs=IDs)
+  #   if not result['OK']:
+  #     return result
+  #   cls.__writeCache(result['Value'])
+  #   return S_OK()
 
   @classmethod
   def initializeHandler(cls, serviceInfo):
@@ -90,7 +162,7 @@ class OAuthManagerHandler(RequestHandler):
     """
     cls.__db = OAuthDB()
     gThreadScheduler.addPeriodicTask(3600, cls.__db.cleanZombieSessions)
-    gThreadScheduler.addPeriodicTask(3600 * 24, cls.__refreshIdPsIDsCache)
+    # gThreadScheduler.addPeriodicTask(3600 * 24, cls.__refreshIdPsIDsCache)
     #return cls.__refreshIdPsIDsCache()
     return S_OK()
 
@@ -110,23 +182,22 @@ class OAuthManagerHandler(RequestHandler):
     userIDs = getIDsForUsername(credDict["username"])
     
     if session:
-      for r in [True, False]:
-        idpDict = self.__readCache()
-        for oid in userIDs:
-          if oid in idpDict:
-            for prov in idpDict[oid].get('Provisers', []):
-              if session in idpDict[oid][prov]:
-                return S_OK()
-        if r:
-          result = self.__refreshIdPsIDsCache(IDs=userIDs)
-          if not result['OK']:
-            return result
+      sDict = self.__getSessions(session=session) or {}
+      if sDict.get('ID') in userIDs:
+        return S_OK()
+
+      result = self.__refreshSessions(session=session)
+      if not result['OK']:
+        return result
+      if result['Value'][session]['ID'] in userIDs:
+        return S_OK()
       return S_ERROR('%s session not found for %s user.' % (session, credDict['username']))
 
     return S_OK(userIDs)
 
-  types_getIdPsIDs = []
-  def export_getIdPsIDs(self):
+  types_getIdProfiles = []
+
+  def export_getIdProfiles(self, userID=None):
     """ Return fresh info from identity providers about users with actual sessions
 
         :return: S_OK(dict)/S_ERROR()
@@ -134,15 +205,69 @@ class OAuthManagerHandler(RequestHandler):
     res = self.__checkAuth()
     if not res['OK']:
       return res
-    if not res["Value"]:
-      return S_OK(self.__readCache())
+    ids = res["Value"]
+
+    if not ids:
+      if userID:
+        return S_OK(self.__getProfiles(userID=userID))
+      return S_OK(self.__getProfiles())
+    
+    if userID and userID in ids:
+      return S_OK(self.__getProfiles(userID=userID))
     
     data = {}
-    for oid in result['Value']:
-      idDict = self.__readCache(userID=oid)
+    for oid in ids:
+      idDict = self.__getProfiles(userID=oid)
       if idDict:
         data[oid] = idDict
+
     return S_OK(data)
+  
+  types_getSessionsInfo = []
+
+  def export_getSessionsInfo(self, session=None):
+    """ Return fresh info from identity providers about users with actual sessions
+
+        :return: S_OK(dict)/S_ERROR()
+    """
+    res = self.__checkAuth()
+    if not res['OK']:
+      return res
+    ids = res["Value"]
+
+    sDict = self.__getSessions(session=session)
+    if not ids:
+      return S_OK(sDict)
+    
+    data = {}
+    for session, data in sDict.items():
+      if data['ID'] in ids:
+        data[session] = data
+
+    return S_OK(data)
+
+  # types_getIdPsIDs = []
+
+  # def export_getIdPsIDs(self):
+  #   """ Return fresh info from identity providers about users with actual sessions
+
+  #       :return: S_OK(dict)/S_ERROR()
+  #   """
+  #   res = self.__checkAuth()
+  #   if not res['OK']:
+  #     return res
+  #   ids = res["Value"]
+
+  #   if not ids:
+  #     return S_OK(self.__readCache())
+    
+  #   data = {}
+  #   for oid in ids:
+  #     idDict = self.__readCache(userID=oid)
+  #     if idDict:
+  #       data[oid] = idDict
+
+  #   return S_OK(data)
 
   types_submitAuthorizeFlow = [basestring]
 
@@ -194,31 +319,31 @@ class OAuthManagerHandler(RequestHandler):
     if not res['OK']:
       return res
 
-    result = self.__parseAuthResponse(response, session)
+    result = self.__db.updateSession(session, {'Status': 'finishing'})
+    if result['OK']:
+      result = self.__parseAuthResponse(response, session)
+    
     if not result['OK']:
       cansel = self.__db.updateSession(session, {'Status': 'failed', 'Comment': result['Message']})
       return result if cansel['OK'] else cansel
 
-    if result['Value']['Status'] in ['authed', 'redirect']:
-      profile = result['Value']['UserProfile']['UsrOptns']
-      self.__updateIDCache(profile['ID'], {'DNs': profile['DNs']})
-      refresh = self.__refreshIdPsIDsCache(idDict=data)
-      if not refresh['OK']:
-        return refresh
-      result['Value']['sessionIDDict'] = refresh['Value']
-    return result
-  
-  def __updateIDCache(self, userID, data):
-    """ Update ID cache with new data
+    responseData = result['Value']
+    if responseData['Status'] in ['authed', 'redirect']:
+      # Cached data
+      provider = responseData['Provider']
+      profile = responseData['UserProfile']['UsrOptns']
+      cacheData = self.__getProfiles(userID=profile['ID']) or {}
+      cacheData['Provider'] = provider
+      cacheData['DNs'] = profile['DNs']
+      cacheData['Sessions'] = list(set(cacheData.get('Sessions', []) + [session]))
+      self.__updateProfiles({profile['ID']: cacheData})
+      result = self.__refreshSessions(session=session)
+      if not result['OK']:
+        return result
+      responseData['upProfile'] = {profile['ID']: cacheData}
+      responseData['upSession'] = {session: result['Value']}
 
-        :param str userID: user ID
-        :param dict data: new information
-    """
-    idCache = self.__readCache(userID=userID)
-    for k, v in data:
-      if k in idCache:
-        idCache[k] = v
-    self.__writeCache(idCache)
+    return S_OK(responseData)
   
   def __parseAuthResponse(self, response, session):
     """ Fill session by user profile, tokens, comment, OIDC authorize status, etc.
@@ -230,10 +355,6 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    result = self.__db.updateSession(session, {'Status': 'finishing'})
-    if not result['OK']:
-      return result
-
     # Search provider by session
     result = self.__db.getProviderBySession(session)
     if not result['OK']:
@@ -297,8 +418,8 @@ class OAuthManagerHandler(RequestHandler):
       if not result['OK']:
         return result
     
+    parseDict['Provider'] = provider
     return S_OK({'Status': status, 'Comment': comment, 'UserProfile': parseDict})
-
 
   def __registerNewUser(self, parseDict):
     """ Register new user

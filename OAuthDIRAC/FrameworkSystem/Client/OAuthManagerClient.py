@@ -36,8 +36,10 @@ class OAuthManagerClient(Client):
     if not result['OK']:
       return result
     if result['Value']['Status'] in ['authed', 'redirect']:
-      refresh = gOAuthManagerData.refreshIdPs(sessionIDDict=result['Value']['sessionIDDict'])
-      if not refresh['OK']:
+      refresh = gOAuthManagerData.updateProfiles(result['Value']['upProfile'])
+      if refresh['OK']:
+        refresh = gOAuthManagerData.updateSessions(result['Value']['upSession'])
+      if not refresh['OK']
         return refresh
     return result
 

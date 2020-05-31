@@ -69,6 +69,35 @@ class OAuthDB(DB):
 
     return self._createTables(tablesD)
   
+  def getSessionsInfo(self, idPs=None, IDs=None, session=None):
+    """ Get information about sessions
+        
+        :param list idPs: list of identity providers that sessions need to update, if None - update all
+        :param list IDs: list of IDs that need to update, if None - update all
+        :param str session: session to update
+
+        :return: S_OK(dict)/S_ERROR()
+    """
+    resDict = {}
+    conn = []
+    if IDs:
+      conn.append('ID IN ("%s") ' % ", ".join(IDs))
+    if idPs:
+      conn.append('Provider IN ("%s") ' % ", ".join(idPs))
+    if session:
+      conn.append('Session = "%s" ' % session)
+    where = 'WHERE %s' % ' AND '.join(conn) if conn else ''
+    result = self._query("SELECT DISTINCT ID, Provider, Session FROM `Sessions` %s" % where)
+    if not result['OK']:
+      return result
+    for userID, idP, session in result['Value']:
+      resDict[session] = {'ID': userID, 'Provider': idP}
+      result = self.getSessionTokens(session)
+      if not result['OK']:
+        return result
+      resDict[session]['Tokens'] = result['Value'] or {}
+    return S_OK(resDict)
+
   def updateIdPSessionsInfoCache(self, idPs=None, IDs=None):
     """ Update cache with information about active session with identity provider
         Must return following structure:
@@ -330,7 +359,17 @@ class OAuthDB(DB):
       fieldsToUpdate['ExpiresIn'] = result['Value'][0][0] if result['Value'] else 'UTC_TIMESTAMP()'
     return self.updateFields('Sessions', updateDict=fieldsToUpdate, condDict=condDict, conn=conn)
   
-  def getLifetime(self, session):
+  def getSessionID(self, session):
+    """ Get user ID by session
+
+        :param str session: session
+
+        :return: S_OK(str)/S_ERROR()
+    """
+    result = self.__getFields(['ID'], session=session)
+    return S_OK(result['Value']['ID']) if result['OK'] else result
+
+  def getSessionLifetime(self, session):
     """ Get lifetime of session
 
         :param str session: session number

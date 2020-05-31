@@ -8,11 +8,11 @@ import pprint
 from DIRAC import S_OK, S_ERROR, gLogger
 from DIRAC.Core.Security.X509Chain import X509Chain  # pylint: disable=import-error
 from DIRAC.Resources.IdProvider.IdProvider import IdProvider
-from DIRAC.ConfigurationSystem.Client.Helpers import Registry
+# from DIRAC.ConfigurationSystem.Client.Helpers import Registry
 from DIRAC.ConfigurationSystem.Client.Helpers.Resources import getProviderByAlias
 
 from OAuthDIRAC.FrameworkSystem.Utilities.OAuth2 import OAuth2
-from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerData import gOAuthManagerData
+# from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerData import gOAuthManagerData
 
 __RCSID__ = "$Id$"
 
@@ -70,7 +70,7 @@ class OAuth2IdProvider(IdProvider):
       return result
 
     if session:
-      result = self.sessionManager.getLifetime(session)
+      result = self.sessionManager.getSessionLifetime(session)
       if not result['OK']:
         return result
       if result['Value'] < 10 * 60:
