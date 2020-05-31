@@ -129,7 +129,7 @@ class OAuthManagerData(object):
         :return: S_OK()/S_ERROR()
     """
     from DIRAC.Core.DISET.RPCClient import RPCClient
-    result = RPCClient('Framework/OAuthManager').getSessionsInfo(session=session)
+    result = RPCClient('Framework/OAuthManager').getSessionsInfo(session)
     if result['OK']:
       self.updateSessions(result['Value'])
     return result
@@ -142,7 +142,7 @@ class OAuthManagerData(object):
         :return: S_OK()/S_ERROR()
     """
     from DIRAC.Core.DISET.RPCClient import RPCClient
-    result = RPCClient('Framework/OAuthManager').getIdProfiles(userID=userID)
+    result = RPCClient('Framework/OAuthManager').getIdProfiles(userID)
     if result['OK']:
       self.updateProfiles(result['Value'])
     return result
