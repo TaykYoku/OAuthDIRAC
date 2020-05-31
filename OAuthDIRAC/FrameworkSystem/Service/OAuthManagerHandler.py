@@ -408,13 +408,6 @@ class OAuthManagerHandler(RequestHandler):
         if not result['OK']:
           return result
 
-    else:
-      status = 'authed and notify'
-
-      result = self.__registerNewUser(provider, parseDict)
-      if not result['OK']:
-        return result
-
     # Update status in current session
     result = self.__db.updateSession(session, 
                                      {'Status': 'reserved' if self.__isReserved(session) else status})
