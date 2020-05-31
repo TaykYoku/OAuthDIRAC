@@ -514,15 +514,17 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    res = self.__checkAuth(session)
-    return self.__db.getStatusBySession(session) if res['OK'] else res
-    # if not result['OK']:
-    #   return result
-    # if result['Value']['Status'] == 'authed':
-    #   user = getUsernameForID(result['Value']['ID'])
-    #   if user['OK']:
-    #     result['Value']['UserName'] = user['Value']
-    # return result
+    # res = self.__checkAuth(session)
+    # if not res['OK']:
+    #   return res
+    
+    # return self.__db.getStatusBySession(session) if res['OK'] else res
+    if result['OK']:
+      if result['Value']['Status'] == 'authed':
+        user = getUsernameForID(result['Value']['ID'])
+        if user['OK']:
+          result['Value']['UserName'] = user['Value']
+    return result
   
   types_getSessionTokens = [basestring]
 
