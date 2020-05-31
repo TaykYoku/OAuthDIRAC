@@ -315,9 +315,9 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    res = self.__checkAuth(session)
-    if not res['OK']:
-      return res
+    # res = self.__checkAuth(session)
+    # if not res['OK']:
+    #   return res
 
     result = self.__db.updateSession(session, {'Status': 'finishing'})
     if result['OK']:
