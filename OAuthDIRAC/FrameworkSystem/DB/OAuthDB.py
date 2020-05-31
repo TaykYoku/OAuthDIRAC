@@ -378,10 +378,12 @@ class OAuthDB(DB):
     """
     result = self.__getFields(['ExpiresIn'], session=session)
     if result['OK']:
-      exp = result['Value']
+      exp = result['Value']['ExpiresIn']
+      if not exp:
+        return S_OK(0)
       result = self._query("SELECT TIME_TO_SEC(TIMEDIFF('%s', UTC_TIMESTAMP()))" % exp)
 
-    return result['Value'][0][0] if result['OK'] else result
+    return S_OK(result['Value'][0][0]) if result['OK'] else result
 
   def __getFields(self, fields=None, conn=None, timeStamp=False, session=None, **kwargs):
     """ Get list of dict of fields that found in DB
