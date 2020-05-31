@@ -375,7 +375,6 @@ class OAuthManagerHandler(RequestHandler):
     comment = ''
 
     # Is ID registred?
-    user = None
     userID = parseDict['UsrOptns']['ID']
     result = getUsernameForID(userID)
     if not result['OK']:
@@ -386,7 +385,6 @@ class OAuthManagerHandler(RequestHandler):
         return result
     
     else:
-      user = result['Value']
       # This session to reserve?
       if not self.__isReserved(session):
         # If not, search reserved session
@@ -416,7 +414,7 @@ class OAuthManagerHandler(RequestHandler):
     if not result['OK']:
       return result
     
-    return S_OK({'UserName': user, 'Status': status, 'Comment': comment, 'UserProfile': parseDict, 'Provider': provider})
+    return S_OK({'Status': status, 'Comment': comment, 'UserProfile': parseDict, 'Provider': provider})
 
   def __isReserved(self, session):
     """ Check if session is reseved
@@ -517,7 +515,7 @@ class OAuthManagerHandler(RequestHandler):
     # res = self.__checkAuth(session)
     # if not res['OK']:
     #   return res
-    
+
     # return self.__db.getStatusBySession(session) if res['OK'] else res
     if result['OK']:
       if result['Value']['Status'] == 'authed':
