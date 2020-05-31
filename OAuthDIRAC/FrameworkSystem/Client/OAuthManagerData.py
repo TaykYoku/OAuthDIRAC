@@ -115,11 +115,11 @@ class OAuthManagerData(object):
   def updateSessions(self, data, time=3600 * 24):
     """ Get cache information
 
-        :param dict data: ID information data
+        :param dict data: session information data
         :param int time: lifetime
     """
-    for oid, info in data.items():
-      self.__cacheSessions.add(oid, time, value=info)
+    for session, info in data.items():
+      self.__cacheSessions.add(session, time, value=info)
 
   def resfreshSessions(self, session=None):
     """ Refresh session cache from service

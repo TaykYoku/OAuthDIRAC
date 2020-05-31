@@ -341,7 +341,7 @@ class OAuthManagerHandler(RequestHandler):
       if not result['OK']:
         return result
       responseData['upProfile'] = {profile['ID']: cacheData}
-      responseData['upSession'] = {session: result['Value']}
+      responseData['upSession'] = result['Value']
 
     return S_OK(responseData)
   
