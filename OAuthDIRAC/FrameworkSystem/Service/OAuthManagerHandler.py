@@ -418,8 +418,7 @@ class OAuthManagerHandler(RequestHandler):
       if not result['OK']:
         return result
     
-    parseDict['Provider'] = provider
-    return S_OK({'Status': status, 'Comment': comment, 'UserProfile': parseDict})
+    return S_OK({'Status': status, 'Comment': comment, 'UserProfile': parseDict, 'Provider': provider})
 
   def __registerNewUser(self, parseDict):
     """ Register new user
