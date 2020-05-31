@@ -115,7 +115,7 @@ class AuthHandler(WebHandler):
         self.log.info(session, 'authorization session flow.')
         result = yield self.threadTask(gSessionManager.getLinkBySession, session)
         if not result['OK']:
-          raise WErr(500, '%s session not exist or expired!' % session)
+          raise WErr(500, '%s session not exist or expired!\n%s' % (session, result['Message']))
         self.log.notice('Redirect to', result['Value'])
         self.redirect(result['Value'])
 
