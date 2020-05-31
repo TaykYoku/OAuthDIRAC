@@ -210,7 +210,7 @@ class OAuthManagerData(object):
     """
     userIDs = []
     profile = self.getProfiles() or {}
-    for uid, data in profile.items()
+    for uid, data in profile.items():
       if dn in data.get('DNs', []):
         userIDs.append(uid)
     return userIDs
