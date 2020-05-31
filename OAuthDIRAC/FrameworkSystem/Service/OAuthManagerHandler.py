@@ -500,8 +500,8 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK(basestring)/S_ERROR()
     """
-    res = self.__checkAuth(session)
-    return self.__db.getLinkBySession(session) if res['OK'] else res
+    #res = self.__checkAuth(session)
+    return self.__db.getLinkBySession(session) #if res['OK'] else res
   
   types_getSessionStatus = [basestring]
 
