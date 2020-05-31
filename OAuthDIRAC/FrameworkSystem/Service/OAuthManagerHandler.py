@@ -377,25 +377,21 @@ class OAuthManagerHandler(RequestHandler):
     # Is ID registred?
     userID = parseDict['UsrOptns']['ID']
     result = getUsernameForID(userID)
-    if result['OK']:
-      # This session to reserve?
-      if re.match('^reserved_.*', session):
-        # Update status in source session
-        result = self.__db.updateSession(session.replace('reserved_', ''), {'Status': status})
-        if not result['OK']:
-          return result
-        
-        # Update status in current session
-        result = self.__db.updateSession(session, {'Status': 'reserved'})
-        if not result['OK']:
-          return result
+    if not result['OK']:
+      status = 'authed and notify'
 
-      else:
+      result = self.__registerNewUser(provider, parseDict)
+      if not result['OK']:
+        return result
+    
+    else:
+      # This session to reserve?
+      if not self.__isReserved(session):
         # If not, search reserved session
         result = self.__db.getReservedSession(userID, provider)
         if not result['OK']:
           return result
-
+        
         if not result['Value']:
           # If no found reserved session, submit second flow to create it
           result = provObj.submitNewSession(session='reserved_%s' % session)
@@ -406,19 +402,35 @@ class OAuthManagerHandler(RequestHandler):
           status = 'redirect'
           comment = '%s/auth/%s' % (getAuthAPI().strip('/'), session)
 
-          result = self.__db.updateSession(session, {'Status': status})
-          if not result['OK']:
-            return result
+      else:
+        # Update status in source session
+        result = self.__db.updateSession(session.replace('reserved_', ''), {'Status': status})
+        if not result['OK']:
+          return result
 
     else:
-
       status = 'authed and notify'
 
       result = self.__registerNewUser(provider, parseDict)
       if not result['OK']:
         return result
+
+    # Update status in current session
+    result = self.__db.updateSession(session, 
+                                     {'Status': 'reserved' if self.__isReserved(session) else status})
+    if not result['OK']:
+      return result
     
     return S_OK({'Status': status, 'Comment': comment, 'UserProfile': parseDict, 'Provider': provider})
+
+  def __isReserved(self, session):
+    """ Check if session is reseved
+
+        :param str session: session
+
+        :return: bool
+    """
+    return re.match('^reserved_.*', session)
 
   def __registerNewUser(self, parseDict):
     """ Register new user
