@@ -102,16 +102,19 @@ class OAuthManagerData(object):
 
         :return: S_OK()/S_ERROR()
     """
-    if not self.__refreshSessions.get(session) and not self.__service.get('Fail'):
-      self.__refreshSessions.add(session, 5 * 60, True)
-      from DIRAC.Core.DISET.RPCClient import RPCClient
-      result = RPCClient('Framework/OAuthManager').getSessionsInfo(session)
-      if not result['OK']:
-        self.__service.add('Fail', 15 * 60, True)
-      elif result['Value']:
-        self.updateSessions({session: result['Value']})
-      return result
-    return S_OK(self.getSessions(session=session))
+    # if not self.__refreshSessions.get(session) and not self.__service.get('Fail'):
+    #   self.__refreshSessions.add(session, 5 * 60, True)
+    serviceStatus = self.__service.get('Fail')
+    if serviceStatus:
+      return S_ERROR('Session server not ready: %s' % serviceStatus['Message'])
+    from DIRAC.Core.DISET.RPCClient import RPCClient
+    result = RPCClient('Framework/OAuthManager').getSessionsInfo(session)
+    if not result['OK']:
+      self.__service.add('Fail', 5 * 60, result)
+    elif result['Value']:
+      self.updateSessions({session: result['Value']})
+    return result
+    # return S_OK(self.getSessions(session=session))
   
   def resfreshProfiles(self, userID=None):
     """ Refresh profiles cache from service
@@ -120,16 +123,19 @@ class OAuthManagerData(object):
 
         :return: S_OK()/S_ERROR()
     """
-    if not self.__refreshProfiles.get(userID) and not self.__service.get('Fail'):
-      self.__refreshProfiles.add(userID, 5 * 60, True)
-      from DIRAC.Core.DISET.RPCClient import RPCClient
-      result = RPCClient('Framework/OAuthManager').getIdProfiles(userID)
-      if not result['OK']:
-        self.__service.add('Fail', 15 * 60, True)
-      elif result['Value']:
-        self.updateProfiles({userID: result['Value']})
-      return result
-    return S_OK(self.getProfiles(userID=userID))
+    # if not self.__refreshProfiles.get(userID) and not self.__service.get('Fail'):
+    serviceStatus = self.__service.get('Fail')
+    if serviceStatus:
+      return S_ERROR('Session server not ready: %s' % serviceStatus['Message'])
+    # self.__refreshProfiles.add(userID, 5 * 60, True)
+    from DIRAC.Core.DISET.RPCClient import RPCClient
+    result = RPCClient('Framework/OAuthManager').getIdProfiles(userID)
+    if not result['OK']:
+      self.__service.add('Fail', 5 * 60, result)
+    elif result['Value']:
+      self.updateProfiles({userID: result['Value']})
+    return result
+    # return S_OK(self.getProfiles(userID=userID))
 
   def getIDsForDN(self, dn):
     """ Find ID for DN
