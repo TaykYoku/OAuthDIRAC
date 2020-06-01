@@ -17,28 +17,6 @@ gCacheSessions = ThreadSafe.Synchronizer()
 class OAuthManagerData(object):
   """ Authentication manager
 
-      Contain IdPsCache cache, with next structure:
-      {
-        <ID1>: {
-          Providers: [ <identity providers> ],
-          <identity provider>: [
-            {
-              <sessions number>: { <tokens> }
-            },
-            { ... }
-          ],
-          DNs: {
-            <DN1>: {
-              ProxyProvider: [ <proxy providers> ],
-              VOMSRoles: [ <VOMSRoles> ],
-              ...
-            },
-            <DN2>: { ... },
-          }
-        },
-        <ID2>: { ... },
-      }
-
       __cacheSessions cache, with next structure:
       {
         <session1>: {
@@ -69,13 +47,6 @@ class OAuthManagerData(object):
 
   __cacheSessions = DictCache()
   __cacheProfiles = DictCache()
-
-  # def __init__(self):
-  #   """ Constructor
-  #   """
-  #   pass
-  #   # self.__IdPsCache = DictCache()
-  #   #self.refreshIdPs()
 
   @gCacheProfiles
   def getProfiles(self, userID=None):
@@ -147,60 +118,6 @@ class OAuthManagerData(object):
       self.updateProfiles({userID: result['Value']})
     return result
 
-  # @gIdPsIDsSync
-  # def refreshIdPs(self, IDs=None, sessionIDDict=None):
-  #   """ Update cache from OAuthDB or dictionary
-
-  #       :param list IDs: refresh IDs
-  #       :param dict sessionIDDict: add session ID dictionary
-
-  #       :return: S_OK()/S_ERROR()
-  #   """
-  #   # Update cache from dictionary
-  #   if sessionIDDict:
-  #     for ID, infoDict in sessionIDDict.items():
-  #       self.__IdPsCache.add(ID, 3600 * 24, value=infoDict)
-  #     return S_OK()
-
-  #   # Update cache from DB
-  #   self.__IdPsCache.add('Fresh', 60 * 15, value=True)
-  #   try:
-  #     from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import gSessionManager
-  #   except Exception:
-  #     return S_ERROR('OAuthManager not ready.')
-  #   result = gSessionManager.getIdPsIDs()
-  #   if result['OK']:
-  #     for ID, infoDict in result['Value'].items():
-  #       if len(infoDict['Providers'].keys()) > 1:
-  #         gLogger.warn('%s user ID used by more that one providers:' % ID, ', '.join(infoDict['Providers'].keys()))
-  #       self.__IdPsCache.add(ID, 3600 * 24, infoDict)
-  #   return S_OK() if result['OK'] else result
-  
-  # def getIdPsCache(self, IDs=None):
-  #   """ Return IdPs cache
-
-  #       :param list IDs: IDs
-
-  #       :return: S_OK(dict)/S_ERROR() -- dictionary contain ID as key and information collected from IdP
-  #   """
-  #   resDict = {}
-
-  #   # Update cache if not actual
-  #   if not self.__IdPsCache.get('Fresh'):
-  #     result = self.refreshIdPs()
-  #     if not result['OK']:
-  #       return result
-
-  #   # Return cache without Fresh key
-  #   idPsCache = self.__IdPsCache.getDict()
-  #   idPsCache.pop('Fresh', None)
-
-  #   for ID, idDict in idPsCache.items():
-  #     if IDs and ID not in IDs:
-  #       continue
-  #     resDict[ID] = idDict
-  #   return S_OK(resDict)
-
   def getIDsForDN(self, dn):
     """ Find ID for DN
     
@@ -213,6 +130,15 @@ class OAuthManagerData(object):
     for uid, data in profile.items():
       if dn in data.get('DNs', []):
         userIDs.append(uid)
+    
+    if not userIDs:
+      result = self.resfreshProfiles()
+      if not result['OK']:
+        return result
+      for uid, data in result['Value'].items():
+        if dn in data.get('DNs', []):
+          userIDs.append(uid)
+    
     return userIDs
   
   def getDNsForID(self, uid):
@@ -222,7 +148,12 @@ class OAuthManagerData(object):
         
         :return: list
     """
-    profile = self.getProfiles(userID=uid) or {}
+    profile = self.getProfiles(userID=uid)
+    if not profile:
+      result = self.resfreshProfiles()
+      if not result['OK']:
+        return result
+      profile = result['Value']
     return profile.get('DNs', [])
   
   def getDNOptionForID(self, uid, dn, option):
@@ -234,7 +165,13 @@ class OAuthManagerData(object):
         
         :return: str or None
     """
-    profile = self.getProfiles(userID=uid) or {}
+    profile = self.getProfiles(userID=uid)
+    if not profile:
+      result = self.resfreshProfiles()
+      if not result['OK']:
+        return result
+      profile = result['Value']
+
     if dn in profile.get('DNs', []):
       return profile['DNs'][dn].get('PROVIDER')
     return None
@@ -246,7 +183,13 @@ class OAuthManagerData(object):
         
         :return: str or None
     """
-    profile = self.getProfiles(userID=uid) or {}
+    profile = self.getProfiles(userID=uid)
+    if not profile:
+      result = self.resfreshProfiles()
+      if not result['OK']:
+        return result
+      profile = result['Value']
+  
     return profile.get('Provider')
 
   def getIDForSession(self, session):
