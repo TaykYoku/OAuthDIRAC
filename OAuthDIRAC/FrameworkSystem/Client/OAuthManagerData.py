@@ -150,7 +150,7 @@ class OAuthManagerData(object):
     """
     profile = self.getProfiles(userID=uid)
     if not profile:
-      result = self.resfreshProfiles()
+      result = self.resfreshProfiles(userID=uid)
       if not result['OK']:
         return result
       profile = result['Value']
@@ -167,7 +167,7 @@ class OAuthManagerData(object):
     """
     profile = self.getProfiles(userID=uid)
     if not profile:
-      result = self.resfreshProfiles()
+      result = self.resfreshProfiles(userID=uid)
       if not result['OK']:
         return result
       profile = result['Value']
@@ -185,7 +185,7 @@ class OAuthManagerData(object):
     """
     profile = self.getProfiles(userID=uid)
     if not profile:
-      result = self.resfreshProfiles()
+      result = self.resfreshProfiles(userID=uid)
       if not result['OK']:
         return result
       profile = result['Value']

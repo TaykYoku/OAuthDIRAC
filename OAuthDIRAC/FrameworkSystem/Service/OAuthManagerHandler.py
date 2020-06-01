@@ -43,6 +43,12 @@ class OAuthManagerHandler(RequestHandler):
         <session2>: { ... }
       }
 
+      __cahceIDs cache, with structure:
+      {
+        <ID1>: [ <sessions> ],
+        <ID2>: ...
+      }
+
       __cacheProfiles cache, with next structure:
       {
         <ID1>: {
@@ -62,6 +68,7 @@ class OAuthManagerHandler(RequestHandler):
   """
 
   __db = None
+  __cahceIDs = DictCache()
   __cacheSessions = DictCache()
   __cacheProfiles = DictCache()
 
@@ -74,6 +81,7 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: dict
     """
+    # TODO: get all IDs
     if userID:
       return cls.__cacheProfiles.get(userID)
     return cls.__cacheProfiles.getDict()
@@ -102,6 +110,19 @@ class OAuthManagerHandler(RequestHandler):
     if not session:
       return cls.__cacheSessions.getDict()
     return cls.__cacheSessions.get(session) or {}
+  
+  @classmethod
+  @gCacheSessions
+  def __getIDs(cls, userID=None):
+    """ Get cache information
+
+        :param str userID: user ID
+
+        :return: dict
+    """
+    if not userID:
+      return cls.__cacheIDs.getDict()
+    return cls.__cacheIDs.get(userID) or {}
 
   @classmethod
   @gCacheSessions
@@ -112,8 +133,10 @@ class OAuthManagerHandler(RequestHandler):
         :param int time: lifetime
     """
     if data:
-      for oid, info in data.items():
-        cls.__cacheSessions.add(oid, time, value=info)
+      for session, info in data.items():
+        idSessions = cls.__cahceIDs.get(info['ID']) or []
+        cls.__cahceIDs.add(info['ID'], time, list(set(idSessions + [session])))
+        cls.__cacheSessions.add(session, time, value=info)
 
   @classmethod
   def __updateSessionsFromDB(cls, idPs=None, IDs=None, session=None):
@@ -125,9 +148,10 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK()/S_ERROR()
     """
-    result = cls.__db.getSessionsInfo(idPs=idPs, IDs=IDs, session=session)
+    result = cls.__db.updateSessionsFromDB(idPs=idPs, IDs=IDs, session=session)
     if result['OK']:
       cls.__addSessions(result['Value'])
+      gLogger.info(len(result['Value']), 'sessions has been uploaded from DB to cache.')
     return result
 
   @classmethod
@@ -166,14 +190,14 @@ class OAuthManagerHandler(RequestHandler):
         :return: S_OK()/S_ERROR()
     """
     cls.log.info("Kill zombie sessions")
-    SESSION_READY = "ready"
-    SESSION_FAILED = "failed"
-    SESSION_RESERVED = "reserved"
-    SESSION_PREPARED = "prepared"
-    SESSION_PROGRESS = "in progress"
-    SESSION_NEEDAUTH = "needToAuth"
-    SESSION_FINISHING = "finishing"
-    # "prepared", "in progress", 15 * 60
+    # SESSION_READY = "ready"
+    # SESSION_FAILED = "failed"
+    # SESSION_RESERVED = "reserved"
+    # SESSION_PREPARED = "prepared"
+    # SESSION_PROGRESS = "in progress"
+    # SESSION_NEEDAUTH = "needToAuth"
+    # SESSION_FINISHING = "finishing"
+    # # "prepared", "in progress", 15 * 60
     #
     result = self.__db.cleanZombieSessions()
     if not result['OK']:
@@ -187,12 +211,23 @@ class OAuthManagerHandler(RequestHandler):
     """ Handler initialization
     """
     cls.__db = OAuthDB()
-    cls.__updateSessionsFromDB()
     gThreadScheduler.addPeriodicTask(15 * 60, cls.__refreshReservedSessions)
     gThreadScheduler.addPeriodicTask(3600, cls.__db.cleanZombieSessions)
     gThreadScheduler.addPeriodicTask(3600, cls.__updateSessionsFromDB) # TODO: update all
-    return S_OK()
+    return cls.__updateSessionsFromDB()
 
+  @classmethod
+  def __refreshProfiles(cls):
+    # Get IdPsIDsSessions dict
+
+    # get IdPs
+    for idP in idPs:
+      # create obj
+      # get IDs for IdP
+      for uid in ids:
+        
+
+    
   def __checkAuth(self, session=None):
     """ Check authorization rules
 

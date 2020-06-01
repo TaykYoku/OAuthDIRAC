@@ -70,7 +70,7 @@ class OAuthDB(DB):
 
     return self._createTables(tablesD)
   
-  def getSessionsInfo(self, idPs=None, IDs=None, session=None):
+  def updateSessionsFromDB(self, idPs=None, IDs=None, session=None):
     """ Get information about sessions
         
         :param list idPs: list of identity providers that sessions need to update, if None - update all
