@@ -15,34 +15,23 @@ from OAuthDIRAC.FrameworkSystem.DB.OAuthDB import OAuthDB
 
 __RCSID__ = "$Id$"
 
+# Session statuses
 
-# gIdPsCacheSync = ThreadSafe.Synchronizer()
+SESSION_READY = "ready"
+SESSION_FAILED = "failed"
+SESSION_REDIRECT = "redirect"
+SESSION_PREPARED = "prepared"
+SESSION_PROGRESS = "in progress"
+SESSION_NEEDAUTH = "needToAuth"
+SESSION_FINISHING = "finishing"
+
+
 gCacheSessions = ThreadSafe.Synchronizer()
 gCacheProfiles = ThreadSafe.Synchronizer()
 
 
 class OAuthManagerHandler(RequestHandler):
   """ Authentication manager
-
-      Contain __IdPsCache cache, with next structure:
-      {
-        <ID1>: {
-          Providers: {
-            <identity provider>: {
-              <sessions number1>: { <tokens> },
-              <sessions number2>: { ... }
-          },
-          DNs: {
-            <DN1>: {
-              ProxyProvider: [ <proxy providers> ],
-              VOMSRoles: [ <VOMSRoles> ],
-              ...
-            },
-            <DN2>: { ... },
-          }
-        },
-        <ID2>: { ... },
-      }
 
       __cacheSessions cache, with next structure:
       {
@@ -73,7 +62,6 @@ class OAuthManagerHandler(RequestHandler):
   """
 
   __db = None
-  # __IdPsCache = DictCache()
   __cacheSessions = DictCache()
   __cacheProfiles = DictCache()
 
@@ -92,14 +80,15 @@ class OAuthManagerHandler(RequestHandler):
 
   @classmethod
   @gCacheProfiles
-  def __updateProfiles(cls, data, time=3600 * 24):
-    """ Get cache information
+  def __addProfiles(cls, data, time=3600 * 24):
+    """ Caching information
 
         :param dict data: ID information data
         :param int time: lifetime
     """
-    for oid, info in data.items():
-      cls.__cacheProfiles.add(oid, time, value=info)
+    if data:
+      for oid, info in data.items():
+        cls.__cacheProfiles.add(oid, time, value=info)
 
   @classmethod
   @gCacheSessions
@@ -110,23 +99,24 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: dict
     """
-    if session:
-      return cls.__cacheSessions.get(session)
-    return cls.__cacheSessions.getDict()
+    if not session:
+      return cls.__cacheSessions.getDict()
+    return cls.__cacheSessions.get(session) or {}
 
   @classmethod
   @gCacheSessions
-  def __updateSessions(cls, data, time=3600 * 24):
-    """ Get cache information
+  def __addSessions(cls, data, time=3600 * 24):
+    """ Caching information
 
         :param dict data: ID information data
         :param int time: lifetime
     """
-    for oid, info in data.items():
-      cls.__cacheSessions.add(oid, time, value=info)
+    if data:
+      for oid, info in data.items():
+        cls.__cacheSessions.add(oid, time, value=info)
 
   @classmethod
-  def __refreshSessions(cls, idPs=None, IDs=None, session=None):
+  def __updateSessionsFromDB(cls, idPs=None, IDs=None, session=None):
     """ Update information about sessions
 
         :param list idPs: list of identity providers that sessions need to update, if None - update all
@@ -137,33 +127,70 @@ class OAuthManagerHandler(RequestHandler):
     """
     result = cls.__db.getSessionsInfo(idPs=idPs, IDs=IDs, session=session)
     if result['OK']:
-      cls.__updateSessions(result['Value'])
+      cls.__addSessions(result['Value'])
     return result
 
-  # @classmethod
-  # def __refreshIdPsIDsCache(cls, idPs=None, IDs=None):
-  #   """ Update information about sessions
+  @classmethod
+  def __refreshReservedSessions(cls):
+    """ Refresh reserved sessions
+    """
+    result = cls.__db.getReservedSessions()
+    if not result['OK']:
+      return result
+    freshDict = {}
+    for data in result['Value']:
+      session = data['Session']
+      provider = data['Provider']
+      if provider not in freshDict:
+        freshDict[provider] = []
+      freshDict[provider] = list(set(freshDict[provider] + [session]))
+    
+    for idP, sessions in freshDict.items():
+      result = IdProviderFactory().getIdProvider(providerName, sessionManager=cls.__db)
+      if result['OK']:
+        provObj = result['Value']
+        result = provObj.checkStatus(session=session)
+        if result['OK']:
+          status = result['Value']['Status']
+          if status == 'ready':
+            cls.log.verbose(session, 'session refreshed!')
+            continue
+          result = S_ERROR('"%s" status is not "ready".' % status)  
+      if not result['OK']:
+        cls.log.error('%s session not refreshed:' % session, result['Message'])
 
-  #       :param list idPs: list of identity providers that sessions need to update, if None - update all
-  #       :param list IDs: list of IDs that need to update, if None - update all
-  #       :param dict idDict: information that need to update
+  @staticmethod
+  def __cleanOAuthDB():
+    """ Check OAuthDB for zombie sessions and clean
 
-  #       :return: S_OK()/S_ERROR()
-  #   """
-  #   result = cls.__db.updateIdPSessionsInfoCache(idPs=idPs, IDs=IDs)
-  #   if not result['OK']:
-  #     return result
-  #   cls.__writeCache(result['Value'])
-  #   return S_OK()
+        :return: S_OK()/S_ERROR()
+    """
+    cls.log.info("Kill zombie sessions")
+    SESSION_READY = "ready"
+    SESSION_FAILED = "failed"
+    SESSION_RESERVED = "reserved"
+    SESSION_PREPARED = "prepared"
+    SESSION_PROGRESS = "in progress"
+    SESSION_NEEDAUTH = "needToAuth"
+    SESSION_FINISHING = "finishing"
+    # "prepared", "in progress", 15 * 60
+    #
+    result = self.__db.cleanZombieSessions()
+    if not result['OK']:
+      gLogger.error(result['Message'])
+      return result
+    gLogger.notice("Cleaning is done!")
+    return S_OK()
 
   @classmethod
   def initializeHandler(cls, serviceInfo):
     """ Handler initialization
     """
     cls.__db = OAuthDB()
+    cls.__updateSessionsFromDB()
+    gThreadScheduler.addPeriodicTask(15 * 60, cls.__refreshReservedSessions)
     gThreadScheduler.addPeriodicTask(3600, cls.__db.cleanZombieSessions)
-    # gThreadScheduler.addPeriodicTask(3600 * 24, cls.__refreshIdPsIDsCache)
-    #return cls.__refreshIdPsIDsCache()
+    gThreadScheduler.addPeriodicTask(3600, cls.__updateSessionsFromDB) # TODO: update all
     return S_OK()
 
   def __checkAuth(self, session=None):
@@ -171,55 +198,57 @@ class OAuthManagerHandler(RequestHandler):
 
         :param str session: session number
 
-        :return: S_OK(list)/S_ERROR()
+        :return: S_OK(tuple)/S_ERROR() -- tuple contain username and IDs
     """
     credDict = self.getRemoteCredentials()
     if credDict['group'] == 'hosts':
-      if 'TrustedHost' in credDict['properties']:
-        return S_OK()
+      if 'TrustedHost' not in credDict['properties']:
+        return S_OK((None, 'all'))
       return S_ERROR('To access host must be "TrustedHost".')
     
     userIDs = getIDsForUsername(credDict["username"])
+    if not userIDs:
+      return S_ERROR('No registred IDs for %s user.' % credDict["username"])
     
     if session:
-      sDict = self.__getSessions(session=session) or {}
-      if sDict.get('ID') in userIDs:
-        return S_OK()
-
-      result = self.__refreshSessions(session=session)
+      result = self.__db.getSessionID(session)
       if not result['OK']:
         return result
-      if result['Value'][session]['ID'] in userIDs:
-        return S_OK()
-      return S_ERROR('%s session not found for %s user.' % (session, credDict['username']))
+      sID = result['Value']
+      if sID not in userIDs:
+        return S_ERROR('%s user not have access to %s ID information.' % (user, sID))
 
-    return S_OK(userIDs)
+    return S_OK((credDict["username"], userIDs))
 
   types_getIdProfiles = []
 
   def export_getIdProfiles(self, userID=None):
     """ Return fresh info from identity providers about users with actual sessions
 
+        :params: str userID: user ID
+
         :return: S_OK(dict)/S_ERROR()
     """
-    res = self.__checkAuth()
-    if not res['OK']:
-      return res
-    ids = res["Value"]
+    result = self.__checkAuth()
+    if not result['OK']:
+      return result
+    user, ids = result["Value"]
 
-    if not ids:
-      if userID:
-        return S_OK(self.__getProfiles(userID=userID))
-      return S_OK(self.__getProfiles())
-    
-    if userID and userID in ids:
+    # For host
+    if ids == 'all':
       return S_OK(self.__getProfiles(userID=userID))
-    
+
+    # For user
+    if userID:
+      if userID not in ids:
+        return S_ERROR('%s user not have access to %s ID information.' % (user, userID))
+      return self.__getProfiles(userID=userID)
+
     data = {}
-    for oid in ids:
-      idDict = self.__getProfiles(userID=oid)
+    for uid in ids:
+      idDict = self.__getProfiles(userID=uid)
       if idDict:
-        data[oid] = idDict
+        data[uid] = idDict
 
     return S_OK(data)
   
@@ -228,17 +257,27 @@ class OAuthManagerHandler(RequestHandler):
   def export_getSessionsInfo(self, session=None):
     """ Return fresh info from identity providers about users with actual sessions
 
+        :param str session: session
+
         :return: S_OK(dict)/S_ERROR()
     """
-    res = self.__checkAuth()
-    if not res['OK']:
-      return res
-    ids = res["Value"]
-
-    sDict = self.__getSessions(session=session) or {}
-    if not ids:
+    result = self.__checkAuth()
+    if not result['OK']:
+      return result
+    user, ids = result["Value"]
+    
+    sDict = self.__getSessions(session=session)
+    
+    # For host
+    if ids == "all":
       return S_OK(sDict)
     
+    # For user
+    if session:
+      if sDict.get(session) and sDict[session]['ID'] not in ids:
+        return S_ERROR('%s user not have access to %s ID information.' % (user, userID))
+      return S_OK(sDict.get(session))
+
     data = {}
     for session, data in sDict.items():
       if data['ID'] in ids:
@@ -246,45 +285,21 @@ class OAuthManagerHandler(RequestHandler):
 
     return S_OK(data)
 
-  # types_getIdPsIDs = []
-
-  # def export_getIdPsIDs(self):
-  #   """ Return fresh info from identity providers about users with actual sessions
-
-  #       :return: S_OK(dict)/S_ERROR()
-  #   """
-  #   res = self.__checkAuth()
-  #   if not res['OK']:
-  #     return res
-  #   ids = res["Value"]
-
-  #   if not ids:
-  #     return S_OK(self.__readCache())
-    
-  #   data = {}
-  #   for oid in ids:
-  #     idDict = self.__readCache(userID=oid)
-  #     if idDict:
-  #       data[oid] = idDict
-
-  #   return S_OK(data)
-
-  types_submitAuthorizeFlow = [basestring]
+  types_submitAuthorizeFlow = [str]
 
   def export_submitAuthorizeFlow(self, providerName, session=None):
     """ Register new session and return dict with authorization url and session number
     
-        :param basestring providerName: provider name
-        :param basestring session: session identificator
+        :param str providerName: provider name
+        :param str session: session identificator
 
         :return: S_OK(dict)/S_ERROR()
     """
-    if session:
-      res = self.__checkAuth(session)
-      if not res['OK']:
-        return res
-    
     gLogger.info('Get authorization for %s.' % providerName, 'Session: %s' % session if session else '')
+    
+    if self.__db.isReservedSession(session):
+      return S_ERROR('You cannot submit authorization flow with reserved session!')
+
     result = IdProviderFactory().getIdProvider(providerName, sessionManager=self.__db)
     if not result['OK']:
       return result
@@ -294,8 +309,11 @@ class OAuthManagerHandler(RequestHandler):
       if not result['OK']:
         return result
       if result['Value']['Status'] == 'ready':
-        return result
-    
+        user = getUsernameForID(self.__getSessions(session).get('ID'))
+        if user['OK']:
+          result['Value']['UserName'] = user['Value']
+        return result if user['OK'] else user
+
     result = provObj.submitNewSession()
     if not result['OK']:
       return S_ERROR('Cannot create authority request URL:', result['Message'])
@@ -303,7 +321,7 @@ class OAuthManagerHandler(RequestHandler):
     return S_OK({'Status': 'needToAuth', 'Session': session,
                  'URL': '%s/auth/%s' % (getAuthAPI().strip('/'), session)})
   
-  types_parseAuthResponse = [dict, basestring]
+  types_parseAuthResponse = [dict, str]
 
   def export_parseAuthResponse(self, response, session):
     """ Fill session by user profile, tokens, comment, OIDC authorize status, etc.
@@ -311,17 +329,18 @@ class OAuthManagerHandler(RequestHandler):
         Create new or modify existend DIRAC user and store the session
 
         :param dict response: authorization response
-        :param basestring session: session number
+        :param str session: session number
 
         :return: S_OK(dict)/S_ERROR()
     """
-    # res = self.__checkAuth(session)
-    # if not res['OK']:
-    #   return res
-
-    result = self.__db.updateSession(session, {'Status': 'finishing'})
+    result = self.__db.getSessionStatus(session)
     if result['OK']:
-      result = self.__parseAuthResponse(response, session)
+      if result['Value']['Status'] not in ['prepared', 'in progress']:
+        return S_ERROR('The current session has already been submitted.')
+    
+      result = self.__db.updateSession(session, {'Status': 'finishing'})
+      if result['OK']:
+        result = self.__parseAuthResponse(response, session)
     
     if not result['OK']:
       cansel = self.__db.updateSession(session, {'Status': 'failed', 'Comment': result['Message']})
@@ -336,8 +355,8 @@ class OAuthManagerHandler(RequestHandler):
       cacheData['Provider'] = provider
       cacheData['DNs'] = profile['DNs']
       cacheData['Sessions'] = list(set(cacheData.get('Sessions', []) + [session]))
-      self.__updateProfiles({profile['ID']: cacheData})
-      result = self.__refreshSessions(session=session)
+      self.__addProfiles({profile['ID']: cacheData})
+      result = self.__updateSessionsFromDB(session=session)
       if not result['OK']:
         return result
       responseData['upProfile'] = {profile['ID']: cacheData}
@@ -351,12 +370,12 @@ class OAuthManagerHandler(RequestHandler):
         Create new or modify existend DIRAC user and store the session
 
         :param dict response: authorization response
-        :param basestring session: session number
+        :param str session: session number
 
         :return: S_OK(dict)/S_ERROR()
     """
     # Search provider by session
-    result = self.__db.getProviderBySession(session)
+    result = self.__db.getSessionProvider(session)
     if not result['OK']:
       return result
     provider = result['Value']
@@ -386,9 +405,9 @@ class OAuthManagerHandler(RequestHandler):
     
     else:
       # This session to reserve?
-      if not self.__isReserved(session):
+      if not self.__db.isReservedSession(session):
         # If not, search reserved session
-        result = self.__db.getReservedSession(userID, provider)
+        result = self.__db.getReservedSessions([userID], [provider])
         if not result['OK']:
           return result
         
@@ -409,21 +428,11 @@ class OAuthManagerHandler(RequestHandler):
           return result
 
     # Update status in current session
-    result = self.__db.updateSession(session, 
-                                     {'Status': 'reserved' if self.__isReserved(session) else status})
+    result = self.__db.updateSession(session, {'Status': status})
     if not result['OK']:
       return result
     
     return S_OK({'Status': status, 'Comment': comment, 'UserProfile': parseDict, 'Provider': provider})
-
-  def __isReserved(self, session):
-    """ Check if session is reseved
-
-        :param str session: session
-
-        :return: bool
-    """
-    return re.match('^reserved_.*', session)
 
   def __registerNewUser(self, parseDict):
     """ Register new user
@@ -454,12 +463,12 @@ class OAuthManagerHandler(RequestHandler):
       self.log.info("%s session, mails to admins:", result['Value'])
     return result
 
-  types_updateSession = [basestring, dict]
+  types_updateSession = [str, dict]
 
   def export_updateSession(self, session, fieldsToUpdate):
     """ Update session record
 
-        :param basestring session: session number
+        :param str session: session number
         :param dict fieldsToUpdate: fields content that need to update
 
         :return: S_OK()/S_ERROR()
@@ -467,56 +476,63 @@ class OAuthManagerHandler(RequestHandler):
     res = self.__checkAuth(session)
     return self.__db.updateSession(session, fieldsToUpdate) if res['OK'] else res
 
-  types_killSession = [basestring]
+  types_killSession = [str]
 
   def export_killSession(self, session):
     """ Remove session record from DB
     
-        :param basestring session: session number
+        :param str session: session number
 
         :return: S_OK()/S_ERROR()
     """
     res = self.__checkAuth(session)
     return self.__db.killSession(session) if res['OK'] else res
 
-  types_logOutSession = [basestring]
+  types_logOutSession = [str]
 
   def export_logOutSession(self, session):
     """ Remove session record from DB and logout form identity provider
     
-        :param basestring session: session number
+        :param str session: session number
 
         :return: S_OK()/S_ERROR()
     """
-    res = self.__checkAuth(session)
-    return self.__db.logOutSession(session) if res['OK'] else res
+    result = self.__checkAuth(session)
+    if not result['OK']:
+      return result
 
-  types_getLinkBySession = [basestring]
+    result = self.__db.getSessionProvider(session)
+    if result['OK']:
+      provider = result['Value']
+      result = IdProviderFactory().getIdProvider(provider, sessionManager=self.__db)
+      if result['OK']:
+        provObj = result['Value']
+        result = provObj.logOut(session)
+    if not result['OK']:
+      self.log.error(result['Message'])
+    return self.__db.killSession(session)
 
-  def export_getLinkBySession(self, session):
+  types_getSessionAuthLink = [str]
+
+  def export_getSessionAuthLink(self, session):
     """ Get authorization URL by session number
 
-        :param basestring session: session number
+        :param str session: session number
 
-        :return: S_OK(basestring)/S_ERROR()
+        :return: S_OK(str)/S_ERROR()
     """
-    #res = self.__checkAuth(session)
-    return self.__db.getLinkBySession(session) #if res['OK'] else res
+    return self.__db.getSessionAuthLink(session)
   
-  types_getSessionStatus = [basestring]
+  types_getSessionStatus = [str]
 
   def export_getSessionStatus(self, session):
     """ Listen DB to get status of authorization session
 
-        :param basestring session: session number
+        :param str session: session number
 
         :return: S_OK(dict)/S_ERROR()
     """
-    # res = self.__checkAuth(session)
-    # if not res['OK']:
-    #   return res
-
-    # return self.__db.getStatusBySession(session) if res['OK'] else res
+    result = self.__db.getSessionStatus(session)
     if result['OK']:
       if result['Value']['Status'] == 'authed':
         user = getUsernameForID(result['Value']['ID'])
@@ -524,28 +540,14 @@ class OAuthManagerHandler(RequestHandler):
           result['Value']['UserName'] = user['Value']
     return result
   
-  types_getSessionTokens = [basestring]
+  types_getSessionTokens = [str]
 
   def export_getSessionTokens(self, session):
     """ Get tokens by session number
 
-        :param basestring session: session number
+        :param str session: session number
 
         :return: S_OK(dict)/S_ERROR()
     """
     res = self.__checkAuth(session)
     return self.__db.getSessionTokens(session) if res['OK'] else res
-
-  @staticmethod
-  def __cleanOAuthDB():
-    """ Check OAuthDB for zombie sessions and clean
-
-        :return: S_OK()/S_ERROR()
-    """
-    gLogger.notice("Killing zombie sessions")
-    result = self.__db.cleanZombieSessions()
-    if not result['OK']:
-      gLogger.error(result['Message'])
-      return result
-    gLogger.notice("Cleaning is done!")
-    return S_OK()

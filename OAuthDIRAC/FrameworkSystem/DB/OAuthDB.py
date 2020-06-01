@@ -35,7 +35,8 @@ class OAuthDB(DB):
                                        'ExpiresIn': 'DATETIME',
                                        'AccessToken': 'VARCHAR(1000)',
                                        'RefreshToken': 'VARCHAR(1000)',
-                                       'LastAccess': 'DATETIME'},
+                                       'LastAccess': 'DATETIME',
+                                       'Reserved': 'VARCHAR(8) DEFAULT "no"'},
                             'PrimaryKey': 'Session',
                             'Engine': 'InnoDB'}}
 
@@ -98,80 +99,6 @@ class OAuthDB(DB):
       resDict[session]['Tokens'] = result['Value'] or {}
     return S_OK(resDict)
 
-  def updateIdPSessionsInfoCache(self, idPs=None, IDs=None):
-    """ Update cache with information about active session with identity provider
-        Must return following structure:
-          { 
-            <ID>: {
-              Providers: {
-                <idetntity provider>: {
-                  <session>: { tokens dictionary }
-                }
-              },
-              DNs: {
-                <DN>: { some metadata }
-              }
-            }
-          }
-
-        :param list idPs: list of identity providers that sessions need to update, if None - update all
-        :param list IDs: list of IDs that need to update, if None - update all
-
-        :return: S_OK(dict)/S_ERROR()
-    """
-    IdPSessionsInfo = {}
-    conn = []
-    if IDs:
-      conn.append('ID IN ("%s") ' % ", ".join(IDs))
-    if idPs:
-      conn.append('Provider IN ("%s") ' % ", ".join(idPs))
-    where = 'WHERE %s' % ' AND '.join(conn) if conn else ''
-    result = self._query("SELECT DISTINCT ID, Provider, Session FROM `Sessions` %s" % where)
-    #result = self.__getFields(session=session, conn=' AND '.join(conn))
-    if not result['OK']:
-      return result
-    for ID, idP, session in result['Value']:
-      # if (idPs and idP not in idPs) or (IDs and ID not in IDs):
-      #   continue
-      if ID not in IdPSessionsInfo:
-        IdPSessionsInfo[ID] = {'Providers': {}, 'DNs': {}}
-      if idP not in IdPSessionsInfo[ID]['Providers']:
-        
-      #   result = IdProviderFactory().getIdProvider(idP, sessionManager=self)
-      #   if not result['OK']:
-      #     return result
-      #   provObj = result['Value']
-      #   result = provObj.getUserProfile(session)
-      #   if not result['OK']:
-      #     self.log.error(result['Message'])
-      #     continue
-      #   userProfile = result['Value']['UsrOptns']
-      #   result = self.getSessionTokens(session)
-      #   if not result['OK']:
-      #     return result
-      #   tokens = result['Value']
-      #   if not tokens:
-      #     result = self.killSession(session)
-      #     self.log.warn('Not found tokens for %s session, removed.' % session, result.get('Value') or result.get('Message'))
-      #     continue
-      #   IdPSessionsInfo[ID]['Providers'][idP] = {session: tokens}
-      #   # Fill user profile
-      #   for key, value in userProfile.items():
-      #     if key not in IdPSessionsInfo[ID]:
-      #       IdPSessionsInfo[ID][key] = value
-      # else:
-        result = self.getSessionTokens(session)
-        if not result['OK']:
-          return result
-        tokens = result['Value']
-        if not tokens:
-          result = self.killSession(session)
-          self.log.warn('Not found tokens for %s session, removed.' % session, result.get('Value') or result.get('Message'))
-          continue
-        IdPSessionsInfo[ID]['Providers'][idP][session] = tokens
-      
-    return S_OK(IdPSessionsInfo)
-
   def createNewSession(self, provider, session=None):
     """ Generates a state string to be used in authorizations
 
@@ -194,19 +121,29 @@ class OAuthDB(DB):
     if not session:
       return S_ERROR("Need to modify Session manager!")
 
-    result = self.insertFields('Sessions', ['Session', 'Provider', 'LastAccess'],
-                                           [session, provider, 'UTC_TIMESTAMP()'])
+    reserved = 'yes' if self.isReservedSession(session) else 'no'
+    result = self.insertFields('Sessions', ['Session', 'Provider', 'Reserved', 'LastAccess'],
+                                           [session, provider, reserved, 'UTC_TIMESTAMP()'])
     return S_OK(session) if result['OK'] else result
 
-  def getLinkBySession(self, session):
+  def isReservedSession(self, session):
+    """ Check if session is reseved
+
+        :param str session: session
+
+        :return: bool
+    """
+    return re.match('^reserved_.*', session)
+
+  def getSessionAuthLink(self, session):
     """ Return authorization URL from session
 
-        :param basestring session: session id
+        :param str session: session id
 
-        :return: S_OK(basestring)/S_ERROR()
+        :return: S_OK(str)/S_ERROR()
     """
-    __conn = 'Status = "prepared" and TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) < 300'
-    result = self.__getFields(['Comment'], conn=__conn, session=session)
+    conn = 'Status = "prepared" and TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) < 300'
+    result = self.__getFields(['Comment'], conn=conn, session=session)
     if not result['OK']:
       return result
     url = result['Value']['Comment']
@@ -217,149 +154,51 @@ class OAuthDB(DB):
       return result
     return S_OK(url)
 
-  def getReservedSession(self, userID, provider):
+  def getReservedSessions(self, userIDs=None, idPs=None):
     """ Find reserved session
 
-        :param str userID: user ID
-        :param str provider: provider
+        :param list userIDs: user ID
+        :param list idPs: provider
 
-        :return: S_OK(list)/S_ERROR()
+        :return: S_OK(list)/S_ERROR() -- list contain dictionaries with information
     """
     reservedSessions = []
-    cmd = 'SELECT Session FROM `Sessions` WHERE Status="reserved" AND'
-    result = self._query('%s ID="%s" AND Provider="%s"' % (cmd, userID, provider))
-    if not result['OK']:
-      return result
-    for data in result['Value']:
-      session = data[0]
-      #if re.match('^reserved_.*', session):
-      reservedSessions.append(session)
-
-    return S_OK(list(set(reservedSessions)))
-
+    conn = ['Reserved = "yes"']
+    if idPs:
+      conn.append(idPs)
+    if userIDs:
+      conn.append(userIDs)
+    return self.__getFields(['Session', 'Provider', 'ID'], conn=" AND ".join(conn))
+    
   def getSessionTokens(self, session):
     """ Get tokens dict by session
 
-        :param basestring session: session number
+        :param str session: session number
 
         :return: S_OK(dict)/S_ERROR()
     """
     return self.__getFields(["AccessToken", "ExpiresIn", "RefreshToken", "TokenType"], session=session)
   
-  def getProviderBySession(self, session):
+  def getSessionProvider(self, session):
     """ Get tokens dict by session
 
-        :param basestring session: session number
+        :param str session: session number
 
         :return: S_OK(dict)/S_ERROR()
     """
     result = self.__getFields(['Provider'], session=session)
-    if not result['OK']:
-      return result
-    return S_OK(result['Value']['Provider'])
+    return S_OK(result['Value']['Provider']) if result['OK'] else result
   
-  def getStatusBySession(self, session):
+  def getSessionStatus(self, session):
     """ Get status dictionary by session id
 
-        :param basestring session: session id
+        :param str session: session id
 
         :return: S_OK(dict)/S_ERROR()
     """
     return self.__getFields(fields=['ID', 'Session', 'Status', 'Comment', 'Provider'], session=session)
-
-  def fetchReservedSessions(self):
-    """ Fetch reserved sessions
-
-        :return: S_OK(int)/S_ERROR()
-    """
-    result = self.__getFields(Status="reserved")
-    if not result['OK']:
-      return result
-    sessionsData = result['Value']
-    self.log.info('Found %s reserved sessions to fetch' % len(sessionsData))
-    for i in range(0, len(sessions)):
-      result = IdProviderFactory().getIdProvider(sessions[i]['Provider'])
-      if result['OK']:
-        providerObj = result['Value']
-        result = providerObj.fetch(sessions[i])
-
-  def cleanZombieSessions(self):
-    """ Kill sessions with old states
-    
-        :return: S_OK(int)/S_ERROR()
-    """
-    result = self.__getFields(['Session'], conn='TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) > 43200')
-    if not result['OK']:
-      return result
-    sessions = result['Value']
-    self.log.info('Found %s old sessions for cleaning' % len(sessions))
-    for i in range(0, len(sessions)):
-      # If its reserved session
-      if re.match('^reserved_.*', sessions[i]['Session']):
-        continue
-      if sessions[i].get('Session'):
-        result = self.logOutSession(sessions[i]['Session'])
-        self.log.debug(result['Message'] or result['Value'])
-    return S_OK(len(sessions))
-
-  def killSession(self, session):
-    """ Remove session
-    
-        :param basestring session: session id
-
-        :return: S_OK()/S_ERROR()
-    """
-    return self.deleteEntries('Sessions', condDict={'Session': session})
-
-  def logOutSession(self, session):
-    """ Remove session
-    
-        :param basestring session: session id
-
-        :return: S_OK()/S_ERROR()
-    """
-    # Log out from provider
-    result = self.__getFields(['Provider'], session=session)
-    if not result['OK']:
-      return result
-    provider = result['Value']
-    result = IdProviderFactory().getIdProvider(provider)
-    if result['OK']:
-      providerObj = result['Value']
-      result = self.getSessionTokens(session)
-      if not result['OK']:
-        return result
-      result = providerObj.logOut(result['Value'])
-    self.log.debug('%s log out:', result.get('Message') or result.get('Value'))
-    return self.killSession(session)
   
-  def updateSession(self, session, fieldsToUpdate=None, conn=None, condDict=None):
-    """ Update session record
-
-        :params basestring session: session id
-        :param dict fieldsToUpdate: fields content that need to update
-        :param basestring conn: search filter
-        :param dict condDict: parameters that need add to search filter
-
-        :return: S_OK()/S_ERROR()
-    """
-    self.log.verbose(session, 'session update..')
-    condDict = condDict or {}
-    condDict['Session'] = session
-    
-    fieldsToUpdate = fieldsToUpdate or {}
-    fieldsToUpdate['LastAccess'] = 'UTC_TIMESTAMP()'
-
-    # Convert seconds to datetime
-    if 'ExpiresIn' in fieldsToUpdate and isinstance(fieldsToUpdate['ExpiresIn'], int):
-      self.log.debug(session, 'session, convert access token live time %s seconds to date.' % fieldsToUpdate['ExpiresIn'])
-      result = self._query("SELECT ADDDATE(UTC_TIMESTAMP(), INTERVAL %s SECOND)" % fieldsToUpdate['ExpiresIn'])
-      if not result['OK']:
-        return result
-      fieldsToUpdate['ExpiresIn'] = result['Value'][0][0] if result['Value'] else 'UTC_TIMESTAMP()'
-    return self.updateFields('Sessions', updateDict=fieldsToUpdate, condDict=condDict, conn=conn)
-  
-  def getSessionID(self, session):
+    def getSessionID(self, session):
     """ Get user ID by session
 
         :param str session: session
@@ -385,14 +224,68 @@ class OAuthDB(DB):
 
     return S_OK(result['Value'][0][0]) if result['OK'] else result
 
+  def cleanZombieSessions(self):
+    """ Kill sessions with old states
+    
+        :return: S_OK(int)/S_ERROR()
+    """
+    result = self.__getFields(['Session'], conn='TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) > 43200')
+    if not result['OK']:
+      return result
+    sessions = result['Value']
+    self.log.info('Found %s old sessions for cleaning' % len(sessions))
+    for i in range(0, len(sessions)):
+      # If its reserved session
+      if re.match('^reserved_.*', sessions[i]['Session']):
+        continue
+      if sessions[i].get('Session'):
+        result = self.logOutSession(sessions[i]['Session'])
+        self.log.debug(result['Message'] or result['Value'])
+    return S_OK(len(sessions))
+
+  def killSession(self, session):
+    """ Remove session
+    
+        :param str session: session id
+
+        :return: S_OK()/S_ERROR()
+    """
+    return self.deleteEntries('Sessions', condDict={'Session': session})
+  
+  def updateSession(self, session, fieldsToUpdate=None, conn=None, condDict=None):
+    """ Update session record
+
+        :params str session: session id
+        :param dict fieldsToUpdate: fields content that need to update
+        :param str conn: search filter
+        :param dict condDict: parameters that need add to search filter
+
+        :return: S_OK()/S_ERROR()
+    """
+    self.log.verbose(session, 'session update..')
+    condDict = condDict or {}
+    condDict['Session'] = session
+    
+    fieldsToUpdate = fieldsToUpdate or {}
+    fieldsToUpdate['LastAccess'] = 'UTC_TIMESTAMP()'
+
+    # Convert seconds to datetime
+    if 'ExpiresIn' in fieldsToUpdate and isinstance(fieldsToUpdate['ExpiresIn'], int):
+      self.log.debug(session, 'session, convert access token live time %s seconds to date.' % fieldsToUpdate['ExpiresIn'])
+      result = self._query("SELECT ADDDATE(UTC_TIMESTAMP(), INTERVAL %s SECOND)" % fieldsToUpdate['ExpiresIn'])
+      if not result['OK']:
+        return result
+      fieldsToUpdate['ExpiresIn'] = result['Value'][0][0] if result['Value'] else 'UTC_TIMESTAMP()'
+    return self.updateFields('Sessions', updateDict=fieldsToUpdate, condDict=condDict, conn=conn)
+
   def __getFields(self, fields=None, conn=None, timeStamp=False, session=None, **kwargs):
     """ Get list of dict of fields that found in DB
 
         :param list fields: field names
-        :param basestring conn: search filter in records
+        :param str conn: search filter in records
         :param bool timeStamp: if need to add field "timeStamp" with current datetime to dictionaries
-        :param basestring session: session number
-        :param basestring `**kwargs`: parameters that need add to search filter
+        :param str session: session number
+        :param str `**kwargs`: parameters that need add to search filter
 
         :return: S_OK(list(dict), dict)/S_ERROR() -- if searching by session dict will return
     """

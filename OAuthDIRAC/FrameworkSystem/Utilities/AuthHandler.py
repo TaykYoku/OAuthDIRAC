@@ -113,7 +113,7 @@ class AuthHandler(WebHandler):
       if optns[-1] == session:
         # Redirect to authentication endpoint
         self.log.info(session, 'authorization session flow.')
-        result = yield self.threadTask(gSessionManager.getLinkBySession, session)
+        result = yield self.threadTask(gSessionManager.getSessionAuthLink, session)
         if not result['OK']:
           raise WErr(500, '%s session not exist or expired!\n%s' % (session, result['Message']))
         self.log.notice('Redirect to', result['Value'])

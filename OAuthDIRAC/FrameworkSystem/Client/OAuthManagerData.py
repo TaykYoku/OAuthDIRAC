@@ -131,7 +131,7 @@ class OAuthManagerData(object):
     from DIRAC.Core.DISET.RPCClient import RPCClient
     result = RPCClient('Framework/OAuthManager').getSessionsInfo(session)
     if result['OK'] and result['Value']:
-      self.updateSessions(result['Value'])
+      self.updateSessions({session: result['Value']})
     return result
   
   def resfreshProfiles(self, userID=None):
@@ -144,7 +144,7 @@ class OAuthManagerData(object):
     from DIRAC.Core.DISET.RPCClient import RPCClient
     result = RPCClient('Framework/OAuthManager').getIdProfiles(userID)
     if result['OK'] and result['Value']:
-      self.updateProfiles(result['Value'])
+      self.updateProfiles({userID: result['Value']})
     return result
 
   # @gIdPsIDsSync

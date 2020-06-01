@@ -48,7 +48,8 @@ class OAuth2ProxyProvider(ProxyProvider):
       return result
     self.idProvider = result['Value']
     self.oauth2 = OAuth2(self.parameters['IdProvider'])
-    return self.idProvider.checkStatus(self.userName)
+    # TODO: Get reserved session for IDs and IdP
+    return self.idProvider.checkStatus(session) 
   
   def getProxy(self, userDN):
     """ Generate user proxy with OIDC flow authentication

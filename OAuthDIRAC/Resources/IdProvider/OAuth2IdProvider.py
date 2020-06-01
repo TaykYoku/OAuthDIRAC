@@ -55,10 +55,9 @@ class OAuth2IdProvider(IdProvider):
     
     return S_OK(session)
 
-  def checkStatus(self, username=None, session=None):
+  def checkStatus(self, session):
     """ Read ready to work status of identity provider
 
-        :param str username: DIRAC user
         :param str session: if need to check session
 
         :return: S_OK(dict)/S_ERROR() -- dictionary contain fields:
@@ -69,27 +68,25 @@ class OAuth2IdProvider(IdProvider):
     if not result['OK']:
       return result
 
-    if session:
-      result = self.sessionManager.getSessionLifetime(session)
+    result = self.sessionManager.getSessionLifetime(session)
+    if not result['OK']:
+      return result
+    if result['Value'] < 10 * 60:
+      self.log.debug('%s tokens are expired, try to refresh' % session)
+      result = self.sessionManager.getSessionTokens(session)
       if not result['OK']:
         return result
-      if result['Value'] < 10 * 60:
-        self.log.debug('%s tokens are expired, try to refresh' % session)
-        result = self.sessionManager.getSessionTokens(session)
-        if not result['OK']:
-          return result
+      tokens = result['Value']
+      result = self.__fetchTokens(tokens)
+      if result['OK']:  
         tokens = result['Value']
-        result = self.__fetchTokens(tokens)
-        if result['OK']:  
-          tokens = result['Value']
-          if not tokens.get('RefreshToken'):
-            return S_ERROR('No refresh token found in response.')
-          return self.sessionManager.updateSession(session, tokens)
-        kill = self.sessionManager.killSession(session)
-        return S_OK({'Status': 'fail', 'Comment': result['Message']}) if kill['OK'] else kill
+        if not tokens.get('RefreshToken'):
+          return S_ERROR('No refresh token found in response.')
+        return self.sessionManager.updateSession(session, tokens)
+      kill = self.sessionManager.killSession(session)
+      return S_OK({'Status': 'fail', 'Comment': result['Message']}) if kill['OK'] else kill
 
-      return S_OK({'Status': 'ready'})
-    return S_ERROR('NOT READY')
+    return S_OK({'Status': 'ready'})
 
     # sessions = []
 
