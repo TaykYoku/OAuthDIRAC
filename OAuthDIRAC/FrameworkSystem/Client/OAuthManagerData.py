@@ -123,7 +123,7 @@ class OAuthManagerData(object):
     
         :param str dn: user DN
         
-        :return: list
+        :return: S_OK(list)
     """
     userIDs = []
     profile = self.getProfiles() or {}
@@ -139,14 +139,14 @@ class OAuthManagerData(object):
         if dn in data.get('DNs', []):
           userIDs.append(uid)
     
-    return userIDs
+    return S_OK(userIDs)
   
   def getDNsForID(self, uid):
     """ Find ID for DN
     
         :param str uid: user ID
         
-        :return: list
+        :return: S_OK(list)/S_ERROR()
     """
     profile = self.getProfiles(userID=uid)
     if not profile:
@@ -154,7 +154,7 @@ class OAuthManagerData(object):
       if not result['OK']:
         return result
       profile = result['Value']
-    return profile.get('DNs', [])
+    return S_OK(profile.get('DNs', []))
   
   def getDNOptionForID(self, uid, dn, option):
     """ Find option for DN
@@ -163,7 +163,7 @@ class OAuthManagerData(object):
         :param str dn: user DN
         :param str option: option to find
         
-        :return: str or None
+        :return: S_OK()/S_ERROR()
     """
     profile = self.getProfiles(userID=uid)
     if not profile:
@@ -173,15 +173,15 @@ class OAuthManagerData(object):
       profile = result['Value']
 
     if dn in profile.get('DNs', []):
-      return profile['DNs'][dn].get('PROVIDER')
-    return None
+      return S_OK(profile['DNs'][dn].get('PROVIDER'))
+    return S_OK(None)
   
   def getIdPForID(self, uid):
     """ Find option for DN
     
         :param str uid: user ID
         
-        :return: str or None
+        :return: S_OK()/S_ERROR()
     """
     profile = self.getProfiles(userID=uid)
     if not profile:
@@ -190,7 +190,7 @@ class OAuthManagerData(object):
         return result
       profile = result['Value']
   
-    return profile.get('Provider')
+    return S_OK(profile.get('Provider'))
 
   def getIDForSession(self, session):
     """ Find ID for session
