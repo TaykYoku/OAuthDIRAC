@@ -248,6 +248,7 @@ class OAuthManagerHandler(RequestHandler):
           if not result['OK']:
             cls.__db.killSession(session)
             continue
+    return S_OK()
     
   def __checkAuth(self, session=None):
     """ Check authorization rules
