@@ -64,6 +64,7 @@ class AuthHandler(WebHandler):
       self.log.info('Initialize "%s" authorization flow' % idP, 'with %s session' % session if session else '')
       result = yield self.threadTask(gSessionManager.submitAuthorizeFlow, idP, session)
       if not result['OK']:
+        self.clear_cookie(idP)
         raise WErr(500, result['Message'])
       if result['Value']['Status'] == 'ready':
         self.set_cookie("TypeAuth", idP)
