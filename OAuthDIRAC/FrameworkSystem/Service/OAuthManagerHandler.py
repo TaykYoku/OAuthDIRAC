@@ -52,8 +52,8 @@ class OAuthManagerHandler(RequestHandler):
       __cacheProfiles cache, with next structure:
       {
         <ID1>: {
-          Provider: ..,
-          Sessions: ..,
+          Provider: ..,  ---> not need
+          Sessions: ..,  ---> not need
           DNs: {
             <DN1>: {
               ProxyProvider: [ <proxy providers> ],
@@ -175,13 +175,9 @@ class OAuthManagerHandler(RequestHandler):
         provObj = result['Value']
         result = provObj.checkStatus(session=session)
         if result['OK']:
-          status = result['Value']['Status']
-          if status == 'ready':
-            cls.log.verbose(session, 'session refreshed!')
-            continue
-          result = S_ERROR('"%s" status is not "ready".' % status)  
-      if not result['OK']:
-        cls.log.error('%s session not refreshed:' % session, result['Message'])
+          cls.log.verbose(session, 'session refreshed!')
+          continue
+      cls.log.error('%s session not refreshed:' % session, result['Message'])
 
   @staticmethod
   def __cleanOAuthDB():
@@ -211,35 +207,47 @@ class OAuthManagerHandler(RequestHandler):
     """ Handler initialization
     """
     cls.__db = OAuthDB()
-    gThreadScheduler.addPeriodicTask(15 * 60, cls.__refreshReservedSessions)
-    gThreadScheduler.addPeriodicTask(3600, cls.__db.cleanZombieSessions)
+    # gThreadScheduler.addPeriodicTask(15 * 60, cls.__refreshReservedSessions)
+    # gThreadScheduler.addPeriodicTask(15 * 60, cls.__refreshReservedSessions)
+    # gThreadScheduler.addPeriodicTask(3600, cls.__db.cleanZombieSessions)
     gThreadScheduler.addPeriodicTask(3600, cls.__updateSessionsFromDB) # TODO: update all
-    return cls.__updateSessionsFromDB()
+    result = cls.__updateSessionsFromDB()
+    return cls.__refreshProfiles() if result['OK'] else result
 
-  # @classmethod
-  # def __refreshProfiles(cls):
-  #   # Get IdPsIDsSessions dict
+  @classmethod
+  def __refreshProfiles(cls):
+    idPsDict = {}
+    for session, data in cls.__cacheSessions.getDict():
+      if data['Status'] == 'authed' and data['Reserved'] = 'yes':
+        uid = data['ID']
+        provider = data['Provider']
+        if provider not in idPsDict:
+          idPsDict[provider] = {}
+        if uid not in idPsDict[provider]:
+          idPsDict[provider][uid] = []
+        idPsDict[provider][uid].append(session)
 
-  #   # get IdPs -->
-  #   for idP in idPs:
-  #     # create obj
-  #     # get IDs for IdP -->
-  #     for uid in ids:
-  #       # get sessions -->
-  #       for session in sessions:
-  #         if not cls.__getProfiles(uid):
-  #           result = provObj.getUserProfile(session)
-  #           if not result['OK']:
-  #             killSession(session)
-  #             continue
-  #           add User Profile
-  #         else:
-  #           result = provObj.chechStatus(session)
-  #           if not result['OK']:
-  #             killSession(session)
-  #             continue
-  #         addSession(session)
+    for idP, data in idPsDict.items():
+      result = IdProviderFactory().getIdProvider(idP, sessionManager=cls.__db)
+      if not result['OK']:
+        return result
+      provObj = result['Value']
+      for uid, sessions in data.items():
+        for session in sessions:
+          result = provObj.checkStatus(session)
+          if result['OK']:
+            if not cls.__getProfiles(uid):
+              result = provObj.getUserProfile(session)
+              if result['OK']:
+                profile = {uid: {}}
+                profile[uid]['DNs'] = result['Value']['UsrOptns']['DNs']
+                profile[uid]['Provider'] = idP
+                cls.__addProfiles(profile)
+                continue
 
+          if not result['OK']:
+            cls.__db.killSession(session)
+            continue
     
   def __checkAuth(self, session=None):
     """ Check authorization rules
@@ -354,13 +362,13 @@ class OAuthManagerHandler(RequestHandler):
     provObj = result['Value']
     if session:
       result = provObj.checkStatus(session=session)
-      if not result['OK']:
-        return result
-      if result['Value']['Status'] == 'ready':
-        user = getUsernameForID(self.__getSessions(session).get('ID'))
-        if user['OK']:
-          result['Value']['UserName'] = user['Value']
-        return result if user['OK'] else user
+      if result['OK']:
+        result = getUsernameForID(self.__getSessions(session).get('ID'))
+        if result['OK']:
+          return S_OK({'UserName': result['Value'], 'Status': 'ready'})
+
+    if not result['OK']:
+      self.log.error(result['Message'], 'Try to generate new session.')
 
     result = provObj.submitNewSession()
     if not result['OK']:

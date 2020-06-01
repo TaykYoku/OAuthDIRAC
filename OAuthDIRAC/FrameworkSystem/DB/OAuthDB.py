@@ -88,11 +88,11 @@ class OAuthDB(DB):
     if session:
       conn.append('Session = "%s" ' % session)
     where = 'WHERE %s' % ' AND '.join(conn) if conn else ''
-    result = self._query("SELECT DISTINCT ID, Provider, Session FROM `Sessions` %s" % where)
+    result = self._query("SELECT DISTINCT ID, Provider, Status, Reserved, Session FROM `Sessions` %s" % where)
     if not result['OK']:
       return result
-    for userID, idP, session in result['Value']:
-      resDict[session] = {'ID': userID, 'Provider': idP}
+    for userID, idP, session, status, reserved in result['Value']:
+      resDict[session] = {'ID': userID, 'Provider': idP, 'Status': status, 'Reserved', reserved}
       result = self.getSessionTokens(session)
       if not result['OK']:
         return result

@@ -85,9 +85,10 @@ class OAuth2IdProvider(IdProvider):
           return S_ERROR('No refresh token found in response.')
         return self.sessionManager.updateSession(session, tokens)
       kill = self.sessionManager.killSession(session)
-      return S_OK({'Status': 'fail', 'Comment': result['Message']}) if kill['OK'] else kill
+      # return S_OK({'Status': 'fail', 'Comment': result['Message']}) if kill['OK'] else kill
+      return result if kill['OK'] else kill
 
-    return S_OK({'Status': 'ready'})
+    return S_OK()
 
     # sessions = []
 
