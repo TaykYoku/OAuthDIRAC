@@ -59,7 +59,7 @@ class OAuthManagerData(object):
         :return: dict
     """
     if userID:
-      return self.__cacheProfiles.get(userID)
+      return self.__cacheProfiles.get(userID) or {}
     return self.__cacheProfiles.getDict()
 
   @gCacheProfiles
@@ -81,7 +81,7 @@ class OAuthManagerData(object):
         :return: dict
     """
     if session:
-      return self.__cacheSessions.get(session)
+      return self.__cacheSessions.get(session) or {}
     return self.__cacheSessions.getDict()
 
   @gCacheSessions
