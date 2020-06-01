@@ -216,16 +216,29 @@ class OAuthManagerHandler(RequestHandler):
     gThreadScheduler.addPeriodicTask(3600, cls.__updateSessionsFromDB) # TODO: update all
     return cls.__updateSessionsFromDB()
 
-  @classmethod
-  def __refreshProfiles(cls):
-    # Get IdPsIDsSessions dict
+  # @classmethod
+  # def __refreshProfiles(cls):
+  #   # Get IdPsIDsSessions dict
 
-    # get IdPs
-    for idP in idPs:
-      # create obj
-      # get IDs for IdP
-      for uid in ids:
-        
+  #   # get IdPs -->
+  #   for idP in idPs:
+  #     # create obj
+  #     # get IDs for IdP -->
+  #     for uid in ids:
+  #       # get sessions -->
+  #       for session in sessions:
+  #         if not cls.__getProfiles(uid):
+  #           result = provObj.getUserProfile(session)
+  #           if not result['OK']:
+  #             killSession(session)
+  #             continue
+  #           add User Profile
+  #         else:
+  #           result = provObj.chechStatus(session)
+  #           if not result['OK']:
+  #             killSession(session)
+  #             continue
+  #         addSession(session)
 
     
   def __checkAuth(self, session=None):
