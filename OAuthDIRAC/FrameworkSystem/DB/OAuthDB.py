@@ -133,7 +133,7 @@ class OAuthDB(DB):
 
         :return: bool
     """
-    return re.match('^reserved_.*', session)
+    return re.match('^reserved_.*', session or '')
 
   def getSessionAuthLink(self, session):
     """ Return authorization URL from session
