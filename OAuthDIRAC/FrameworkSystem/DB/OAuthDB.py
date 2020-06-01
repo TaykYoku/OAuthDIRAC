@@ -198,7 +198,7 @@ class OAuthDB(DB):
     """
     return self.__getFields(fields=['ID', 'Session', 'Status', 'Comment', 'Provider'], session=session)
   
-    def getSessionID(self, session):
+  def getSessionID(self, session):
     """ Get user ID by session
 
         :param str session: session
