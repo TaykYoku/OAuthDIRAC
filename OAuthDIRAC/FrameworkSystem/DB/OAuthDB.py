@@ -92,7 +92,7 @@ class OAuthDB(DB):
     if not result['OK']:
       return result
     for userID, idP, session, status, reserved in result['Value']:
-      resDict[session] = {'ID': userID, 'Provider': idP, 'Status': status, 'Reserved', reserved}
+      resDict[session] = {'ID': userID, 'Provider': idP, 'Status': status, 'Reserved': reserved}
       result = self.getSessionTokens(session)
       if not result['OK']:
         return result
