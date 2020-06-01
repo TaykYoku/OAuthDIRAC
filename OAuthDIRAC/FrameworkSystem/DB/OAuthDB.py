@@ -162,12 +162,11 @@ class OAuthDB(DB):
 
         :return: S_OK(list)/S_ERROR() -- list contain dictionaries with information
     """
-    reservedSessions = []
     conn = ['Reserved = "yes"']
     if idPs:
-      conn.append(idPs)
+      conn.append('Provider IN ("%s")' % '", "'.join(idPs))
     if userIDs:
-      conn.append(userIDs)
+      conn.append('ID IN ("%s")' % '", "'.join(userIDs))
     return self.__getFields(['Session', 'Provider', 'ID'], conn=" AND ".join(conn))
     
   def getSessionTokens(self, session):

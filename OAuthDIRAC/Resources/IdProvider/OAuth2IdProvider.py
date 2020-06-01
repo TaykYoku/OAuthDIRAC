@@ -43,6 +43,7 @@ class OAuth2IdProvider(IdProvider):
     if not result['OK']:
       return result
     session = result['Value']
+    self.log.verbose(session, 'session was created.')
 
     result = self.oauth2.createAuthRequestURL(session)
     if result['OK']:
