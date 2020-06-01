@@ -218,7 +218,7 @@ class OAuthManagerHandler(RequestHandler):
   def __refreshProfiles(cls):
     idPsDict = {}
     for session, data in cls.__cacheSessions.getDict():
-      if data['Status'] == 'authed' and data['Reserved'] = 'yes':
+      if data['Status'] == 'authed' and data['Reserved'] == 'yes':
         uid = data['ID']
         provider = data['Provider']
         if provider not in idPsDict:
