@@ -47,8 +47,9 @@ class OAuthManagerData(object):
 
   __cacheSessions = DictCache()
   __cacheProfiles = DictCache()
-  __refreshSession = DictCache()
+  __refreshSessions = DictCache()
   __refreshProfiles = DictCache()
+  __retryToConnect = DictCache()
 
   @gCacheProfiles
   def getProfiles(self, userID=None):
@@ -101,11 +102,13 @@ class OAuthManagerData(object):
 
         :return: S_OK()/S_ERROR()
     """
-    if not self.__refreshSessions.get(session):
-      self.__refreshSessions.add(session, 15 * 60, True)
+    if not self.__refreshSessions.get(session) and not self.__service.get('Fail'):
+      self.__refreshSessions.add(session, 5 * 60, True)
       from DIRAC.Core.DISET.RPCClient import RPCClient
       result = RPCClient('Framework/OAuthManager').getSessionsInfo(session)
-      if result['OK'] and result['Value']:
+      if not result['OK']:
+        self.__service.add('Fail', 15 * 60, True)
+      elif result['Value']:
         self.updateSessions({session: result['Value']})
       return result
     return S_OK(self.getSessions(session=session))
@@ -117,11 +120,13 @@ class OAuthManagerData(object):
 
         :return: S_OK()/S_ERROR()
     """
-    if not self.__refreshProfiles.get(userID):
-      self.__refreshProfiles.add(userID, 15 * 60, True)
+    if not self.__refreshProfiles.get(userID) and not self.__service.get('Fail'):
+      self.__refreshProfiles.add(userID, 5 * 60, True)
       from DIRAC.Core.DISET.RPCClient import RPCClient
       result = RPCClient('Framework/OAuthManager').getIdProfiles(userID)
-      if result['OK'] and result['Value']:
+      if not result['OK']:
+        self.__service.add('Fail', 15 * 60, True)
+      elif result['Value']:
         self.updateProfiles({userID: result['Value']})
       return result
     return S_OK(self.getProfiles(userID=userID))
