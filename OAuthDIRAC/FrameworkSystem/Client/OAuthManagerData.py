@@ -45,11 +45,11 @@ class OAuthManagerData(object):
   """
   __metaclass__ = DIRACSingleton.DIRACSingleton
 
+  __service = DictCache()
   __cacheSessions = DictCache()
   __cacheProfiles = DictCache()
   __refreshSessions = DictCache()
   __refreshProfiles = DictCache()
-  __retryToConnect = DictCache()
 
   @gCacheProfiles
   def getProfiles(self, userID=None):
