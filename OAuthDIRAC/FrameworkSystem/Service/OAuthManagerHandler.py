@@ -83,7 +83,7 @@ class OAuthManagerHandler(RequestHandler):
     """
     # TODO: get all IDs
     if userID:
-      return cls.__cacheProfiles.get(userID)
+      return cls.__cacheProfiles.get(userID) or {}
     return cls.__cacheProfiles.getDict()
 
   @classmethod
