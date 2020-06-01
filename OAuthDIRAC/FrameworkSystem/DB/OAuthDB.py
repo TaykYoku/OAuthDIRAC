@@ -313,4 +313,4 @@ class OAuthDB(DB):
         resList.append(d)
     if not resList and session:
       return S_ERROR('No %s session found.' % session)
-    return S_OK(resList[0] if session else restList)
+    return S_OK(resList[0] if session else resList)
