@@ -142,10 +142,12 @@ class OAuthDB(DB):
 
         :return: S_OK(str)/S_ERROR()
     """
-    conn = 'Status = "prepared" and TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) < 300'
-    result = self.__getFields(['Comment'], conn=conn, session=session)
+    conn = 'TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) < 300'
+    result = self.__getFields(['Comment'], conn=conn, Session=session, Status='prepared')
     if not result['OK']:
       return result
+    if not result['Value']:
+      return S_ERROR('%s session is change status or deleted.')
     url = result['Value']['Comment']
     if not url:
       return S_ERROR('No link found.')
@@ -176,7 +178,7 @@ class OAuthDB(DB):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    return self.__getFields(["AccessToken", "ExpiresIn", "RefreshToken", "TokenType"], session=session)
+    return self.__getFields(["AccessToken", "ExpiresIn", "RefreshToken", "TokenType"], Session=session)
   
   def getSessionProvider(self, session):
     """ Get tokens dict by session
@@ -185,7 +187,7 @@ class OAuthDB(DB):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    result = self.__getFields(['Provider'], session=session)
+    result = self.__getFields(['Provider'], Session=session)
     return S_OK(result['Value']['Provider']) if result['OK'] else result
   
   def getSessionStatus(self, session):
@@ -195,7 +197,7 @@ class OAuthDB(DB):
 
         :return: S_OK(dict)/S_ERROR()
     """
-    return self.__getFields(fields=['ID', 'Session', 'Status', 'Comment', 'Provider'], session=session)
+    return self.__getFields(fields=['ID', 'Session', 'Status', 'Comment', 'Provider'], Session=session)
   
   def getSessionID(self, session):
     """ Get user ID by session
@@ -204,7 +206,7 @@ class OAuthDB(DB):
 
         :return: S_OK(str)/S_ERROR()
     """
-    result = self.__getFields(['ID'], session=session)
+    result = self.__getFields(['ID'], Session=session)
     return S_OK(result['Value']['ID']) if result['OK'] else result
 
   def getSessionLifetime(self, session):
@@ -214,7 +216,7 @@ class OAuthDB(DB):
 
         :return: S_OK(int)/S_ERROR() -- lifetime in a seconds
     """
-    result = self.__getFields(['ExpiresIn'], session=session)
+    result = self.__getFields(['ExpiresIn'], Session=session)
     if result['OK']:
       exp = result['Value']['ExpiresIn']
       if not exp:
@@ -277,19 +279,18 @@ class OAuthDB(DB):
       fieldsToUpdate['ExpiresIn'] = result['Value'][0][0] if result['Value'] else 'UTC_TIMESTAMP()'
     return self.updateFields('Sessions', updateDict=fieldsToUpdate, condDict=condDict, conn=conn)
 
-  def __getFields(self, fields=None, conn=None, timeStamp=False, session=None, **kwargs):
+  def __getFields(self, fields=None, conn=None, timeStamp=False, **kwargs):
     """ Get list of dict of fields that found in DB
 
         :param list fields: field names
         :param str conn: search filter in records
         :param bool timeStamp: if need to add field "timeStamp" with current datetime to dictionaries
-        :param str session: session number
         :param str `**kwargs`: parameters that need add to search filter
 
         :return: S_OK(list(dict), dict)/S_ERROR() -- if searching by session dict will return
     """
     fields = fields or self.tableDict['Sessions']['Fields'].keys()
-    result = self.getFields('Sessions', outFields=fields, condDict={'Session': session} if session else kwargs, conn=conn)
+    result = self.getFields('Sessions', outFields=fields, condDict=kwargs, conn=conn)
     if not result['OK']:
       return result
 
@@ -311,6 +312,6 @@ class OAuthDB(DB):
         d['TimeStamp'] = timeStamp
       if d:
         resList.append(d)
-    if not resList and session:
-      return S_ERROR('No %s session found.' % session)
+    if not resList and kwargs.get('Session') and len(kwargs) == 1 and not conn:
+      return S_ERROR('%s session no found.' % kwargs['Session'])
     return S_OK(resList[0] if session else resList)
