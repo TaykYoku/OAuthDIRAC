@@ -55,7 +55,7 @@ class AuthHandler(WebHandler):
     if not result['OK']:
       raise WErr(500, result['Message'])
     idPs = result['Value']
-    idP = re.match("(%s)?" % '|'.join(idPs), optns[0]).group()
+    idP = optns[0] if optns[0] in idPs else None
     session = re.match("([A-z0-9]+)?", optns[0]).group()
 
     if idP:
