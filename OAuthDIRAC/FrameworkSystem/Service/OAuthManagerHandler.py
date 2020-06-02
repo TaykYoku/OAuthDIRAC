@@ -473,10 +473,9 @@ class OAuthManagerHandler(RequestHandler):
           result = provObj.submitNewSession(session='reserved_%s' % session)
           if not result['OK']:
             return result
-          session = result['Value']
 
           status = 'redirect'
-          comment = '%s/auth/%s' % (getAuthAPI().strip('/'), session)
+          comment = '%s/auth/%s' % (getAuthAPI().strip('/'), result['Value'])
 
       else:
         # Update status in source session
