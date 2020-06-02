@@ -314,4 +314,4 @@ class OAuthDB(DB):
         resList.append(d)
     if not resList and kwargs.get('Session') and len(kwargs) == 1 and not conn:
       return S_ERROR('%s session no found.' % kwargs['Session'])
-    return S_OK(resList[0] if session else resList)
+    return S_OK(resList[0] if kwargs.get('Session') else resList)
