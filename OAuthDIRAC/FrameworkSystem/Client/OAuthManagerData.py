@@ -65,7 +65,7 @@ class OAuthManagerData(object):
 
   @gCacheProfiles
   def updateProfiles(self, data, time=3600 * 24):
-    """ Get cache information
+    """ Add cache information
 
         :param dict data: ID information data
         :param int time: lifetime
@@ -159,9 +159,9 @@ class OAuthManagerData(object):
           userIDs.append(uid)
     
     return S_OK(userIDs)
-  
+
   def getDNsForID(self, uid):
-    """ Find ID for DN
+    """ Find DNs for ID
     
         :param str uid: user ID
         
@@ -192,7 +192,7 @@ class OAuthManagerData(object):
       profile = result['Value']
 
     if dn in profile.get('DNs', []):
-      return S_OK(profile['DNs'][dn].get('PROVIDER'))
+      return S_OK(profile['DNs'][dn].get(option))
     return S_OK(None)
   
   def getIdPForID(self, uid):
