@@ -12,6 +12,7 @@ from DIRAC.Resources.IdProvider.IdProviderFactory import IdProviderFactory
 
 from OAuthDIRAC.FrameworkSystem.Utilities.OAuth2 import OAuth2
 from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import gSessionManager
+from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerData import gOAuthManagerData
 
 __RCSID__ = "$Id$"
 
@@ -25,7 +26,14 @@ class OAuth2ProxyProvider(ProxyProvider):
   def setParameters(self, parameters):
     self.log = gLogger.getSubLogger('%s/%s' % (__name__, parameters['ProviderName']))
     self.parameters = parameters
-    self.idProvider = None
+    self.idProviders = self.parameters['IdProvider'] or []
+    if not isinstance(self.parameters['IdProvider'], list):
+      self.idProviders = [self.parameters['IdProvider']]
+    if not self.idProviders:
+      result = Registry.getProvidersForInstance('Id', providerType='OAuth2')
+      if not result['OK']:
+        return result
+      self.idProviders = result['Value']
     self.oauth2 = None
   
   def checkStatus(self, userDN):
@@ -39,17 +47,32 @@ class OAuth2ProxyProvider(ProxyProvider):
                  - 'Status' with ready to work status[ready, needToAuth]
                  - 'AccessTokens' with list of access token
     """
-    result = Registry.getUserNameForDN(userDN)
+    result = Registry.getUsernameForDN(userDN)
     if not result['OK']:
       return result
-    self.userName = result['Value']
-    result = IdProviderFactory().getIdProvider(self.parameters['IdProvider'])
-    if not result['OK']:
-      return result
-    self.idProvider = result['Value']
-    self.oauth2 = OAuth2(self.parameters['IdProvider'])
-    # TODO: Get reserved session for IDs and IdP
-    return self.idProvider.checkStatus(session) 
+    userName = result['Value']
+    userIDs = Registry.getIDsForUsername(userName)
+    idP = None
+    for uid in userIDs:
+      result = gOAuthManagerData.getIdPForID(uid)
+      if not result['OK']:
+        return result
+      idP = result['Value']
+      if idP in self.idProviders:
+        result = IdProviderFactory().getIdProvider(idP)
+        if not result['OK']:
+          return result
+        idPObj = result['Value']
+        result = idPObj.checkStatus(uID=uid)
+        if result['OK']:
+          return S_OK({'Status': 'ready'})
+    return S_OK({'Status': 'needToAuth', 'Comment': 'Need to auth with %s identity provider',
+                 'Action': {'openURL': {'URL': '%s/auth/%s' % (getAuthAPI().strip('/'), idP)}})
+
+    # self.oauth2 = OAuth2(self.parameters['IdProvider'])
+    # # TODO: Get reserved session for IDs and IdP
+    # self.idProvider.
+    # return self.idProvider.checkStatus(session) 
   
   def getProxy(self, userDN):
     """ Generate user proxy with OIDC flow authentication
@@ -82,7 +105,11 @@ class OAuth2ProxyProvider(ProxyProvider):
         self.log.error(result['Message'])
         # Refresh tokens
         tokens['State'] = session
-        result = self.idProvider.fetchTokensAndUpdateSession(tokens)
+        result = IdProviderFactory().getIdProvider(idP)
+        if not result['OK']:
+          return result
+        idPObj = result['Value']
+        result = idPObj.fetchTokensAndUpdateSession(tokens)
         if not result['OK']:
           self.log.error(result['Message'])
           continue
