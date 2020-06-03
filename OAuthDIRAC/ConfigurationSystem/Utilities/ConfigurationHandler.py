@@ -9,6 +9,7 @@ from tornado.template import Template
 from DIRAC import S_OK, S_ERROR, gConfig, gLogger
 from DIRAC.ConfigurationSystem.Client.Helpers import Resources, Registry
 from DIRAC.ConfigurationSystem.Client.ConfigurationData import gConfigurationData
+from DIRAC.FrameworkSystem.Client.ProxyManagerClient import gProxyManager
 
 from WebAppDIRAC.Lib.WebHandler import WebHandler, asyncGen, WErr
 
@@ -73,7 +74,11 @@ class ConfigurationHandler(WebHandler):
         raise WErr(500, 'Invalid argument')
     
     elif any([optns[0] == m and re.match('^[a-z][A-z]+', m) for m in dir(Registry)]) and self.isRegisteredUser():
-      result = yield self.threadTask(getattr(Registry, optns[0]), **self.args)
+      if optns[0] == 'getGroupsStatusByUsername':
+        result = yield self.threadTask(gProxyManager.getGroupsStatusByUsername(username), **self.args)
+      else:
+        raise WErr(500, '%s request unsuported' % optns[0])
+      # result = yield self.threadTask(getattr(Registry, optns[0]), **self.args)
 
     if not result['OK']:
       raise WErr(404, result['Message'])
