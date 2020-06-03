@@ -234,7 +234,7 @@ class OAuthManagerHandler(RequestHandler):
       provObj = result['Value']
       for uid, sessions in data.items():
         for session in sessions:
-          result = provObj.checkStatus(session)
+          result = provObj.checkStatus(session=session)
           if result['OK']:
             if not cls.__getProfiles(uid):
               result = provObj.getUserProfile(session)
@@ -529,6 +529,7 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK()/S_ERROR()
     """
+    # TODO: Add to cache
     res = self.__checkAuth(session)
     return self.__db.updateSession(session, fieldsToUpdate) if res['OK'] else res
 
@@ -541,6 +542,7 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: S_OK()/S_ERROR()
     """
+    # TODO: Add to cache
     res = self.__checkAuth(session)
     return self.__db.killSession(session) if res['OK'] else res
 
@@ -607,3 +609,17 @@ class OAuthManagerHandler(RequestHandler):
     """
     res = self.__checkAuth(session)
     return self.__db.getSessionTokens(session) if res['OK'] else res
+
+  types_createNewSession = [str]
+
+  def export_createNewSession(self, provider, session=None):
+    """ Generates a state string to be used in authorizations
+
+        :param str provider: provider
+        :param str session: session number
+    
+        :return: S_OK(str)/S_ERROR()
+    """
+    # TODO: Add to cache
+    res = self.__checkAuth(session)
+    return self.__db.createNewSession(provider, session) if res['OK'] else res
