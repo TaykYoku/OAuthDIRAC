@@ -67,7 +67,7 @@ class OAuth2ProxyProvider(ProxyProvider):
         if result['OK']:
           return S_OK({'Status': 'ready'})
     return S_OK({'Status': 'needToAuth', 'Comment': 'Need to auth with %s identity provider',
-                 'Action': {'openURL': {'URL': '%s/auth/%s' % (getAuthAPI().strip('/'), idP)}})
+                 'Action': {'openURL': {'URL': '%s/auth/%s' % (getAuthAPI().strip('/'), idP)}}})
 
     # self.oauth2 = OAuth2(self.parameters['IdProvider'])
     # # TODO: Get reserved session for IDs and IdP
