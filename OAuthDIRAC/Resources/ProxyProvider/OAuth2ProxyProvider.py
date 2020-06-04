@@ -7,6 +7,7 @@ import datetime
 from DIRAC import S_OK, S_ERROR, gLogger
 from DIRAC.Core.Security.X509Chain import X509Chain  # pylint: disable=import-error
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry
+from DIRAC.ConfigurationSystem.Client.Utilities import getAuthAPI
 from DIRAC.Resources.ProxyProvider.ProxyProvider import ProxyProvider
 from DIRAC.Resources.IdProvider.IdProviderFactory import IdProviderFactory
 
