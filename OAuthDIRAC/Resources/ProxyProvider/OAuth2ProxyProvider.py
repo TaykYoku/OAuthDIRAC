@@ -53,13 +53,13 @@ class OAuth2ProxyProvider(ProxyProvider):
       return result
     userName = result['Value']
     userIDs = Registry.getIDsForUsername(userName)
-    idP = None
+    idP = self.idProviders[0]
     for uid in userIDs:
       result = gOAuthManagerData.getIdPForID(uid)
       if not result['OK']:
         return result
-      idP = result['Value']
-      if idP in self.idProviders:
+      if result['Value'] in self.idProviders:
+        idP = result['Value']
         result = IdProviderFactory().getIdProvider(idP)
         if not result['OK']:
           return result
