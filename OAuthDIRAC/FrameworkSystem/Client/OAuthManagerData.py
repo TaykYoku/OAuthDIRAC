@@ -109,10 +109,11 @@ class OAuthManagerData(object):
       self.__cahceIDs.add(info['ID'], time, list(set(idSessions + [session])))
       self.__cacheSessions.add(session, time, value=info)
 
-  def resfreshSessions(self, session=None):
+  def resfreshSessions(self, session=None, userID=None):
     """ Refresh session cache from service
 
         :param str session: session to update
+        :param str userID: user ID
 
         :return: S_OK()/S_ERROR()
     """
@@ -120,7 +121,7 @@ class OAuthManagerData(object):
     if serviceStatus:
       return S_ERROR('Session server not ready: %s' % serviceStatus['Message'])
     from DIRAC.Core.DISET.RPCClient import RPCClient
-    result = RPCClient('Framework/OAuthManager').getSessionsInfo(session)
+    result = RPCClient('Framework/OAuthManager').getSessionsInfo(session, userID)
     if not result['OK']:
       self.__service.add('Fail', 5 * 60, result)
     elif result['Value']:
