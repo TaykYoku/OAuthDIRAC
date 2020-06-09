@@ -265,9 +265,9 @@ class OAuthManagerHandler(RequestHandler):
     """
     credDict = self.getRemoteCredentials()
     if credDict['group'] == 'hosts':
-      if 'TrustedHost' in credDict['properties']:
-        return S_OK((None, 'all'))
-      return S_ERROR('To access host must be "TrustedHost".')
+      #if 'TrustedHost' in credDict['properties']:
+      return S_OK((None, 'all'))
+      #return S_ERROR('To access host must be "TrustedHost".')
     
     userIDs = getIDsForUsername(credDict["username"])
     if not userIDs:
@@ -284,6 +284,7 @@ class OAuthManagerHandler(RequestHandler):
     return S_OK((credDict["username"], userIDs))
 
   types_getIdProfiles = []
+  auth_getIdProfiles = ["authenticated", "TrustedHost"]
 
   def export_getIdProfiles(self, userID=None):
     """ Return fresh info from identity providers about users with actual sessions
@@ -316,6 +317,7 @@ class OAuthManagerHandler(RequestHandler):
     return S_OK(data)
   
   types_getSessionsInfo = []
+  auth_getIdProfiles = ["authenticated", "TrustedHost"]
 
   def export_getSessionsInfo(self, session=None, userID=None):
     """ Return fresh info from identity providers about users with actual sessions
@@ -530,6 +532,7 @@ class OAuthManagerHandler(RequestHandler):
     return result
 
   types_updateSession = [str, dict]
+  auth_getIdProfiles = ["authenticated", "TrustedHost"]
 
   def export_updateSession(self, session, fieldsToUpdate):
     """ Update session record
@@ -544,6 +547,7 @@ class OAuthManagerHandler(RequestHandler):
     return self.__db.updateSession(session, fieldsToUpdate) if res['OK'] else res
 
   types_killSession = [str]
+  auth_getIdProfiles = ["authenticated", "TrustedHost"]
 
   def export_killSession(self, session):
     """ Remove session record from DB
@@ -557,6 +561,7 @@ class OAuthManagerHandler(RequestHandler):
     return self.__db.killSession(session) if res['OK'] else res
 
   types_logOutSession = [str]
+  auth_getIdProfiles = ["authenticated", "TrustedHost"]
 
   def export_logOutSession(self, session):
     """ Remove session record from DB and logout form identity provider
@@ -609,6 +614,7 @@ class OAuthManagerHandler(RequestHandler):
     return result
   
   types_getSessionTokens = [str]
+  auth_getIdProfiles = ["authenticated", "TrustedHost"]
 
   def export_getSessionTokens(self, session):
     """ Get tokens by session number
@@ -621,6 +627,7 @@ class OAuthManagerHandler(RequestHandler):
     return self.__db.getSessionTokens(session) if res['OK'] else res
 
   types_createNewSession = [str]
+  auth_getIdProfiles = ["authenticated", "TrustedHost"]
 
   def export_createNewSession(self, provider, session=None):
     """ Generates a state string to be used in authorizations
