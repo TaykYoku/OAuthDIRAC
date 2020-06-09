@@ -217,7 +217,7 @@ class OAuthManagerData(object):
         return result
       sessionsDict = result['Value']
 
-    for session, data in sessionsDict:
+    for session, data in sessionsDict.items():
       return S_OK(data.get('Provider'))
   
     return S_OK(None)
