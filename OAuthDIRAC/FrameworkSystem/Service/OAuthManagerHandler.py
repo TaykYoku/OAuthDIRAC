@@ -17,12 +17,19 @@ __RCSID__ = "$Id$"
 
 # Session statuses
 
+# successfully authed and ready to use
 SESSION_READY = "ready"
+# crashed
 SESSION_FAILED = "failed"
+# authed, paused for waiting when second flow will end
 SESSION_REDIRECT = "redirect"
+# just created
 SESSION_PREPARED = "prepared"
+# first request to get auth link
 SESSION_PROGRESS = "in progress"
+# auth needed
 SESSION_NEEDAUTH = "needToAuth"
+# finishing
 SESSION_FINISHING = "finishing"
 
 
@@ -52,8 +59,6 @@ class OAuthManagerHandler(RequestHandler):
       __cacheProfiles cache, with next structure:
       {
         <ID1>: {
-          Provider: ..,  ---> not need
-          Sessions: ..,  ---> not need
           DNs: {
             <DN1>: {
               ProxyProvider: [ <proxy providers> ],
@@ -81,7 +86,6 @@ class OAuthManagerHandler(RequestHandler):
 
         :return: dict
     """
-    # TODO: get all IDs
     if userID:
       return cls.__cacheProfiles.get(userID) or {}
     return cls.__cacheProfiles.getDict()
@@ -100,29 +104,27 @@ class OAuthManagerHandler(RequestHandler):
 
   @classmethod
   @gCacheSessions
-  def __getSessions(cls, session=None):
+  def __getSessions(cls, session=None, userID=None):
     """ Get cache information
 
+        :param str session: session
         :param str userID: user ID
 
         :return: dict
     """
-    if not session:
-      return cls.__cacheSessions.getDict()
-    return cls.__cacheSessions.get(session) or {}
-  
-  @classmethod
-  @gCacheSessions
-  def __getIDs(cls, userID=None):
-    """ Get cache information
-
-        :param str userID: user ID
-
-        :return: dict
-    """
-    if not userID:
-      return cls.__cacheIDs.getDict()
-    return cls.__cacheIDs.get(userID) or {}
+    if session:
+      data = cls.__cacheSessions.get(session)
+      if userID and userID != data['ID']:
+        return {}
+      return data
+    
+    if userID:
+      data = {}
+      for session in cls.__cahceIDs.get(userID) or []:
+        data[session] = cls.__cacheSessions.get(session)
+      return data
+    
+    return cls.__cacheSessions.getDict()
 
   @classmethod
   @gCacheSessions
@@ -132,11 +134,10 @@ class OAuthManagerHandler(RequestHandler):
         :param dict data: ID information data
         :param int time: lifetime
     """
-    if data:
-      for session, info in data.items():
-        idSessions = cls.__cahceIDs.get(info['ID']) or []
-        cls.__cahceIDs.add(info['ID'], time, list(set(idSessions + [session])))
-        cls.__cacheSessions.add(session, time, value=info)
+    for session, info in data.items():
+      idSessions = cls.__cahceIDs.get(info['ID']) or []
+      cls.__cahceIDs.add(info['ID'], time, list(set(idSessions + [session])))
+      cls.__cacheSessions.add(session, time, value=info)
 
   @classmethod
   def __updateSessionsFromDB(cls, idPs=None, IDs=None, session=None):
@@ -150,7 +151,7 @@ class OAuthManagerHandler(RequestHandler):
     """
     result = cls.__db.updateSessionsFromDB(idPs=idPs, IDs=IDs, session=session)
     if result['OK']:
-      cls.__addSessions(result['Value'])
+      cls.__addSessions(result['Value'] or {})
       gLogger.info(len(result['Value']), 'sessions has been uploaded from DB to cache.')
     return result
 
@@ -216,6 +217,10 @@ class OAuthManagerHandler(RequestHandler):
 
   @classmethod
   def __refreshProfiles(cls):
+    """ Refresh users profiles
+
+        :return: S_OK()/S_ERROR()
+    """
     idPsDict = {}
     for session, data in cls.__cacheSessions.getDict().items():
       if data['Status'] == 'authed' and data['Reserved'] == 'yes':
@@ -239,10 +244,11 @@ class OAuthManagerHandler(RequestHandler):
             if not cls.__getProfiles(uid):
               result = provObj.getUserProfile(session)
               if result['OK']:
-                profile = {uid: {}}
-                profile[uid]['DNs'] = result['Value']['UsrOptns']['DNs']
-                profile[uid]['Provider'] = idP
-                cls.__addProfiles(profile)
+                dns = result['Value']['UsrOptns']['DNs']
+                cacheData = self.__getProfiles(userID=uid) or {}
+                if dns:
+                  cacheData['DNs'] = dns
+                cls.__addProfiles({uid: cacheData})
                 continue
 
           if not result['OK']:
@@ -311,10 +317,11 @@ class OAuthManagerHandler(RequestHandler):
   
   types_getSessionsInfo = []
 
-  def export_getSessionsInfo(self, session=None):
+  def export_getSessionsInfo(self, session=None, userID=None):
     """ Return fresh info from identity providers about users with actual sessions
 
         :param str session: session
+        :param str userID: user ID
 
         :return: S_OK(dict)/S_ERROR()
     """
@@ -322,23 +329,28 @@ class OAuthManagerHandler(RequestHandler):
     if not result['OK']:
       return result
     user, ids = result["Value"]
-    
-    sDict = self.__getSessions(session=session)
-    
+
     # For host
     if ids == "all":
-      return S_OK(sDict)
+      return S_OK(self.__getSessions(session=session, userID=userID))
     
     # For user
-    if session:
-      if sDict.get(session) and sDict[session]['ID'] not in ids:
+    if userID:
+      if userID not in ids:
         return S_ERROR('%s user not have access to %s ID information.' % (user, userID))
-      return S_OK(sDict.get(session))
+      return self.__getSessions(session=session, userID=userID)
+
+    if session:
+      data = self.__getSessions(session=session, userID=userID)
+      if data.get('ID') not in ids:
+        return S_ERROR('%s user not have access to %s ID information.' % (user, userID))
+      return S_OK(data)
 
     data = {}
-    for session, data in sDict.items():
-      if data['ID'] in ids:
-        data[session] = data
+    for uid in ids:
+      for session, data in self.__getSessions(userID=uid):
+        if data['ID'] in ids:
+          data[session] = data
 
     return S_OK(data)
 
@@ -406,12 +418,10 @@ class OAuthManagerHandler(RequestHandler):
     responseData = result['Value']
     if responseData['Status'] in ['authed', 'redirect']:
       # Cached data
-      provider = responseData['Provider']
       profile = responseData['UserProfile']['UsrOptns']
       cacheData = self.__getProfiles(userID=profile['ID']) or {}
-      cacheData['Provider'] = provider
-      cacheData['DNs'] = profile['DNs']
-      cacheData['Sessions'] = list(set(cacheData.get('Sessions', []) + [session]))
+      if profile['DNs']:
+        cacheData['DNs'] = profile['DNs']
       self.__addProfiles({profile['ID']: cacheData})
       result = self.__updateSessionsFromDB(session=session)
       if not result['OK']:
