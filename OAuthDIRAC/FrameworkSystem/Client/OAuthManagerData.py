@@ -124,7 +124,7 @@ class OAuthManagerData(object):
     if not result['OK']:
       self.__service.add('Fail', 5 * 60, result)
     elif result['Value']:
-      self.updateSessions(result['Value'] if session else {session: result['Value']})
+      self.updateSessions({session: result['Value']} if session else result['Value'])
     return result
 
   def resfreshProfiles(self, userID=None):
