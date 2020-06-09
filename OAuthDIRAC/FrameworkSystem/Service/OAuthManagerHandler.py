@@ -245,7 +245,7 @@ class OAuthManagerHandler(RequestHandler):
               result = provObj.getUserProfile(session)
               if result['OK']:
                 dns = result['Value']['UsrOptns']['DNs']
-                cacheData = self.__getProfiles(userID=uid) or {}
+                cacheData = cls.__getProfiles(userID=uid) or {}
                 if dns:
                   cacheData['DNs'] = dns
                 cls.__addProfiles({uid: cacheData})
