@@ -27,10 +27,15 @@ class OAuthManagerData(object):
         <session2>: { ... }
       }
 
+      __cahceIDs cache, with structure:
+      {
+        <ID1>: [ <sessions> ],
+        <ID2>: ...
+      }
+
       __cacheProfiles cache, with next structure:
       {
         <ID1>: {
-          Provider: ..,
           DNs: {
             <DN1>: {
               ProxyProvider: [ <proxy providers> ],
@@ -46,10 +51,9 @@ class OAuthManagerData(object):
   __metaclass__ = DIRACSingleton.DIRACSingleton
 
   __service = DictCache()
+  __cahceIDs = DictCache()
   __cacheSessions = DictCache()
   __cacheProfiles = DictCache()
-  __refreshSessions = DictCache()
-  __refreshProfiles = DictCache()
 
   @gCacheProfiles
   def getProfiles(self, userID=None):
@@ -74,15 +78,23 @@ class OAuthManagerData(object):
       self.__cacheProfiles.add(oid, time, value=info)
 
   @gCacheSessions
-  def getSessions(self, session=None):
+  def getSessions(self, session=None, userID=None):
     """ Get cache information
 
+        :param str session: session
         :param str userID: user ID
 
         :return: dict
     """
     if session:
       return self.__cacheSessions.get(session) or {}
+    if userID:
+      sessions = {}
+      for session in self.__cahceIDs.get(userID) or []:
+        sDict = self.__cacheSessions.get(session)
+        if sDict:
+          sessions[session] = sDict
+      return sessions
     return self.__cacheSessions.getDict()
 
   @gCacheSessions
@@ -93,6 +105,8 @@ class OAuthManagerData(object):
         :param int time: lifetime
     """
     for session, info in data.items():
+      idSessions = self.__cahceIDs.get(info['ID']) or []
+      self.__cahceIDs.add(info['ID'], time, list(set(idSessions + [session])))
       self.__cacheSessions.add(session, time, value=info)
 
   def resfreshSessions(self, session=None):
@@ -102,8 +116,6 @@ class OAuthManagerData(object):
 
         :return: S_OK()/S_ERROR()
     """
-    # if not self.__refreshSessions.get(session) and not self.__service.get('Fail'):
-    #   self.__refreshSessions.add(session, 5 * 60, True)
     serviceStatus = self.__service.get('Fail')
     if serviceStatus:
       return S_ERROR('Session server not ready: %s' % serviceStatus['Message'])
@@ -112,10 +124,9 @@ class OAuthManagerData(object):
     if not result['OK']:
       self.__service.add('Fail', 5 * 60, result)
     elif result['Value']:
-      self.updateSessions({session: result['Value']})
+      self.updateSessions(result['Value'] if session else {session: result['Value']})
     return result
-    # return S_OK(self.getSessions(session=session))
-  
+
   def resfreshProfiles(self, userID=None):
     """ Refresh profiles cache from service
 
@@ -123,19 +134,16 @@ class OAuthManagerData(object):
 
         :return: S_OK()/S_ERROR()
     """
-    # if not self.__refreshProfiles.get(userID) and not self.__service.get('Fail'):
     serviceStatus = self.__service.get('Fail')
     if serviceStatus:
       return S_ERROR('Session server not ready: %s' % serviceStatus['Message'])
-    # self.__refreshProfiles.add(userID, 5 * 60, True)
     from DIRAC.Core.DISET.RPCClient import RPCClient
     result = RPCClient('Framework/OAuthManager').getIdProfiles(userID)
     if not result['OK']:
       self.__service.add('Fail', 5 * 60, result)
     elif result['Value']:
-      self.updateProfiles({userID: result['Value']})
+      self.updateProfiles(result['Value'] if userID else {userID: result['Value']})
     return result
-    # return S_OK(self.getProfiles(userID=userID))
 
   def getIDsForDN(self, dn):
     """ Find ID for DN
@@ -202,14 +210,17 @@ class OAuthManagerData(object):
         
         :return: S_OK()/S_ERROR()
     """
-    profile = self.getProfiles(userID=uid)
-    if not profile:
-      result = self.resfreshProfiles(userID=uid)
+    sessionsDict = self.getSessions(userID=uid)
+    if not sessionsDict:
+      result = self.resfreshSessions(userID=uid)
       if not result['OK']:
         return result
-      profile = result['Value']
+      sessionsDict = result['Value']
+
+    for session, data in sessionsDict:
+      return S_OK(data.get('Provider'))
   
-    return S_OK(profile.get('Provider'))
+    return S_OK(None)
 
   def getIDForSession(self, session):
     """ Find ID for session
