@@ -53,7 +53,7 @@ class ConfigurationHandler(WebHandler):
     optns = self.overpath.strip('/').split('/')
     if not optns or len(optns) > 1:
       raise WErr(404, "Wrone way")
-    
+    result = S_ERROR('resquest is wrong')
     if optns[0] == 'get':
       if 'version' in self.args and (self.args.get('version') or '0') >= gConfigurationData.getVersion():
         self.finish()
