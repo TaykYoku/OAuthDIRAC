@@ -611,7 +611,7 @@ class OAuthManagerHandler(RequestHandler):
     sessionList = []
     for idP, sessions in data.items():
       if not check:
-        sessionList.append(session)
+        sessionList += sessions
         continue
       result = IdProviderFactory().getIdProvider(provider, sessionManager=self.__db)
       if not result['OK']:
@@ -621,7 +621,7 @@ class OAuthManagerHandler(RequestHandler):
         if provObj.checkStatus(session)['OK']:
           sessionList.append(session)
       
-    return S_OK(sessionList)
+    return S_OK(list(set(sessionList)))
 
   types_updateSession = [str, dict]
   auth_updateSession = ["authenticated", "TrustedHost"]
