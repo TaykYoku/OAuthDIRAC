@@ -238,5 +238,20 @@ class OAuthManagerData(object):
         return result
       data = result['Value'] or {}
     return S_OK(data['ID']) if data.get('ID') else S_ERROR('No ID found for session %s' % session)
+  
+  def getIdPForSession(self, session):
+    """ Find IdP for session
+    
+        :param basestring session: session number
+        
+        :return: S_OK()/S_ERROR()
+    """
+    data = self.getSessions(session=session)
+    if not data:
+      result = self.resfreshSessions(session=session)
+      if not result['OK']:
+        return result
+      data = result['Value'] or {}
+    return S_OK(data['Provider']) if data.get('Provider') else S_ERROR('No IdP found for session %s' % session)
 
 gOAuthManagerData = OAuthManagerData()
