@@ -55,18 +55,18 @@ class OAuth2ProxyProvider(ProxyProvider):
     userIDs = Registry.getIDsForUsername(userName)
     idP = self.idProviders[0]
     for uid in userIDs:
-      result = gOAuthManagerData.getIdPForID(uid)
+      result = gOAuthManagerData.getIdPsForID(uid)
       if not result['OK']:
         return result
-      if result['Value'] in self.idProviders:
-        idP = result['Value']
-        result = IdProviderFactory().getIdProvider(idP)
-        if not result['OK']:
-          return result
-        idPObj = result['Value']
-        result = idPObj.checkStatus(uID=uid)
-        if result['OK']:
-          return S_OK({'Status': 'ready'})
+      for idP in reuslt['Value']:  
+        if idP in self.idProviders:
+          result = IdProviderFactory().getIdProvider(idP)
+          if not result['OK']:
+            return result
+          idPObj = result['Value']
+          result = idPObj.checkStatus(uID=uid)
+          if result['OK']:
+            return S_OK({'Status': 'ready'})
     return S_OK({'Status': 'needToAuth', 'Comment': 'Need to auth with %s identity provider' % idP,
                  'Action': ['auth', [idP, 'inThread', '%s/auth/%s' % (getAuthAPI().strip('/'), idP)]]})
 

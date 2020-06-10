@@ -204,7 +204,7 @@ class OAuthManagerData(object):
       return S_OK(profile['DNs'][dn].get(option))
     return S_OK(None)
   
-  def getIdPForID(self, uid):
+  def getIdPsForID(self, uid):
     """ Find option for DN
     
         :param str uid: user ID
@@ -218,10 +218,11 @@ class OAuthManagerData(object):
         return result
       sessionsDict = result['Value']
 
+    providers = []
     for session, data in sessionsDict.items():
-      return S_OK(data.get('Provider'))
+      providers.append(data['Provider'])
   
-    return S_OK(None)
+    return S_OK(list(set(providers)))
 
   def getIDForSession(self, session):
     """ Find ID for session

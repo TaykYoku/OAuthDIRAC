@@ -571,11 +571,10 @@ class OAuthManagerHandler(RequestHandler):
   types_logOutSession = [str]
   auth_logOutSession = ["authenticated", "TrustedHost"]
 
-  def export_logOutSession(self, session, provObj=None):
+  def export_logOutSession(self, session):
     """ Remove session record from DB and logout form identity provider
     
         :param str session: session number
-        :param object provObj: provider object
 
         :return: S_OK()/S_ERROR()
     """
@@ -583,15 +582,14 @@ class OAuthManagerHandler(RequestHandler):
     if not result['OK']:
       return result
 
-    if not provObj:
-      result = self.__db.getSessionProvider(session)
-      if not result['OK']:
-        return result
-      provider = result['Value']
-      result = IdProviderFactory().getIdProvider(provider, sessionManager=self.__db)
-      if not result['OK']:
-        return result
-      provObj = result['Value']
+    result = self.__db.getSessionProvider(session)
+    if not result['OK']:
+      return result
+    provider = result['Value']
+    result = IdProviderFactory().getIdProvider(provider, sessionManager=self.__db)
+    if not result['OK']:
+      return result
+    provObj = result['Value']
     result = provObj.logOut(session)
     if not result['OK']:
       self.log.error(result['Message'])
