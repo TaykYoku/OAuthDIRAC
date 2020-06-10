@@ -189,7 +189,7 @@ class OAuth2(Session):
       try:
         self.request('POST', self.parameters['token_endpoint']).raise_for_status()
       except self.exceptions.RequestException as e:
-        return S_ERROR("%s: %s" % (e.message, e.r.text))
+        return S_ERROR("%s: %s" % (e.message, r.text))
     return S_OK()
 
   def fetchToken(self, code=None, refreshToken=None):
