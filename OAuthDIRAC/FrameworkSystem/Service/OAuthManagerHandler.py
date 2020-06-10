@@ -538,6 +538,35 @@ class OAuthManagerHandler(RequestHandler):
     if result['OK']:
       self.log.info("%s session, mails to admins:", result['Value'])
     return result
+  
+  types_getSessionLifetime = [str]
+  auth_getSessionLifetime = ["authenticated", "TrustedHost"]
+
+  def export_getSessionLifetime(self, session):
+    """ Get lifetime of session
+
+        :param str session: session number
+
+        :return: S_OK(int)/S_ERROR() -- lifetime in a seconds
+    """
+    # TODO: auth
+    res = self.__checkAuth(session)
+    return self.__db.getSessionLifetime(userIDs, idPs) if res['OK'] else res
+
+  types_getReservedSessions = []
+  auth_getReservedSessions = ["authenticated", "TrustedHost"]
+
+  def export_getReservedSessions(self, userIDs=None, idPs=None):
+    """ Get reserved sessions
+
+        :param str session: session number
+        :param dict fieldsToUpdate: fields content that need to update
+
+        :return: S_OK()/S_ERROR()
+    """
+    # TODO: auth
+    res = self.__checkAuth(session)
+    return self.__db.getReservedSessions(userIDs, idPs) if res['OK'] else res
 
   types_updateSession = [str, dict]
   auth_updateSession = ["authenticated", "TrustedHost"]

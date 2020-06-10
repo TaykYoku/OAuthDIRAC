@@ -53,7 +53,7 @@ class OAuth2ProxyProvider(ProxyProvider):
       return result
     userName = result['Value']
     userIDs = Registry.getIDsForUsername(userName)
-    idP = self.idProviders[0]
+    
     for uid in userIDs:
       result = gOAuthManagerData.getIdPsForID(uid)
       if not result['OK']:
@@ -67,6 +67,7 @@ class OAuth2ProxyProvider(ProxyProvider):
           result = idPObj.checkStatus(uID=uid)
           if result['OK']:
             return S_OK({'Status': 'ready'})
+    idP = self.idProviders[0]
     return S_OK({'Status': 'needToAuth', 'Comment': 'Need to auth with %s identity provider' % idP,
                  'Action': ['auth', [idP, 'inThread', '%s/auth/%s' % (getAuthAPI().strip('/'), idP)]]})
 
