@@ -117,14 +117,14 @@ class OAuthManagerData(object):
 
         :return: S_OK()/S_ERROR()
     """
-    serviceStatus = self.__service.get('Fail')
-    if serviceStatus:
-      return S_ERROR('Session server not ready: %s' % serviceStatus['Message'])
+    # serviceStatus = self.__service.get('Fail')
+    # if serviceStatus:
+    #   return S_ERROR('Session server not ready: %s' % serviceStatus['Message'])
     from DIRAC.Core.DISET.RPCClient import RPCClient
     result = RPCClient('Framework/OAuthManager').getSessionsInfo(session, userID)
-    if not result['OK']:
-      self.__service.add('Fail', 60, result)
-    elif result['Value']:
+    if result['OK'] and result['Value']:
+      # self.__service.add('Fail', 60, result)
+    # elif result['Value']:
       self.updateSessions({session: result['Value']} if session else result['Value'])
     return result
 
@@ -135,15 +135,15 @@ class OAuthManagerData(object):
 
         :return: S_OK()/S_ERROR()
     """
-    serviceStatus = self.__service.get('Fail')
-    if serviceStatus:
-      return S_ERROR('Session server not ready: %s' % serviceStatus['Message'])
+    # serviceStatus = self.__service.get('Fail')
+    # if serviceStatus:
+    #   return S_ERROR('Session server not ready: %s' % serviceStatus['Message'])
     from DIRAC.Core.DISET.RPCClient import RPCClient
     result = RPCClient('Framework/OAuthManager').getIdProfiles(userID)
-    if not result['OK']:
-      self.__service.add('Fail', 5 * 60, result)
-    elif result['Value']:
-      self.updateProfiles(result['Value'] if userID else {userID: result['Value']})
+    if result['OK'] and result['Value']:
+    #   self.__service.add('Fail', 5 * 60, result)
+    # elif result['Value']:
+      self.updateProfiles({userID: result['Value']} if userID else result['Value'])
     return result
 
   def getIDsForDN(self, dn):
@@ -238,7 +238,7 @@ class OAuthManagerData(object):
         return result
       data = result['Value'] or {}
     return S_OK(data['ID']) if data.get('ID') else S_ERROR('No ID found for session %s' % session)
-  
+
   def getIdPForSession(self, session):
     """ Find IdP for session
     

@@ -132,7 +132,7 @@ class OAuth2ProxyProvider(ProxyProvider):
       result = self.__getProxyRequest(session)
       if not result['OK']:
         self.log.error(result['Message'])
-        result = gOAuthManagerData.refreshSession(session)
+        result = gSessionManager.refreshSession(session)
         if not result['OK']:
           self.log.error(result['Message'])
           continue
