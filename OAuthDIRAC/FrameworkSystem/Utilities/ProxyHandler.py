@@ -57,6 +57,9 @@ class ProxyHandler(WebHandler):
       proxyLifeTime = int(self.args.get('lifetime'))
     optns = self.overpath.strip('/').split('/')
     
+    credGroup = self.getUserGroup()
+    proxyCli = ProxyManagerClient(delegatedGroup=credGroup, delegatedID=self.getID(), delegatedDN=self.getDN())
+
     # GET
     if self.request.method == 'GET':
       # Return content of Proxy DB
@@ -65,8 +68,8 @@ class ProxyHandler(WebHandler):
 
       # Return personal proxy
       elif not self.overpath:
-        result = yield self.threadTask(ProxyManagerClient().downloadPersonalProxy, self.getUserName(),
-                                       self.getUserGroup(), requiredTimeLeft=proxyLifeTime, voms=voms)
+        result = yield self.threadTask(proxyCli.downloadPersonalProxy, self.getUserName(),
+                                       credGroup, requiredTimeLeft=proxyLifeTime, voms=voms)
         if not result['OK']:
           raise WErr(500, result['Message'])
         self.log.notice('Proxy was created.')
@@ -86,9 +89,9 @@ class ProxyHandler(WebHandler):
           raise WErr(500, '%s@%s has no registred DN: %s' % (user, group, result.get('Message') or ""))
         
         if voms:
-          result = yield self.threadTask(ProxyManagerClient().downloadVOMSProxy, user, group, requiredTimeLeft=proxyLifeTime)
+          result = yield self.threadTask(proxyCli.downloadVOMSProxy, user, group, requiredTimeLeft=proxyLifeTime)
         else:
-          result = yield self.threadTask(ProxyManagerClient().downloadProxy, user, group, requiredTimeLeft=proxyLifeTime)
+          result = yield self.threadTask(proxyCli.downloadProxy, user, group, requiredTimeLeft=proxyLifeTime)
         if not result['OK']:
           raise WErr(500, result['Message'])
         self.log.notice('Proxy was created.')
