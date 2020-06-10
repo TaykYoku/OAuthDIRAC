@@ -187,7 +187,8 @@ class OAuth2(Session):
         continue
       self.params = {'token': key, 'token_type_hint': value}
       try:
-        self.request('POST', self.parameters['token_endpoint']).raise_for_status()
+        r = self.request('POST', self.parameters['token_endpoint'])
+        r.raise_for_status()
       except self.exceptions.RequestException as e:
         return S_ERROR("%s: %s" % (e.message, r.text))
     return S_OK()
