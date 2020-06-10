@@ -552,32 +552,76 @@ class OAuthManagerHandler(RequestHandler):
     # TODO: auth
     res = self.__checkAuth(session)
     return self.__db.getSessionLifetime(session) if res['OK'] else res
+  
+  types_refreshSession = [str]
+  auth_refreshSession = ["authenticated", "TrustedHost"]
+
+  def export_refreshSession(self, session):
+    """ Refresh session
+
+        :param str session: session number
+
+        :return: S_OK()/S_ERROR()
+    """
+    result = self.__checkAuth(session)
+    if not result['OK']:
+      return result
+    result = self.__db.getSessionProvider(session)
+    if not result['OK']:
+      return result
+    provider = result['Value']
+    result = IdProviderFactory().getIdProvider(provider, sessionManager=self.__db)
+    if not result['OK']:
+      return result
+    provObj = result['Value']
+    return provObj.fetch(session)
 
   types_getReservedSessions = []
   auth_getReservedSessions = ["authenticated", "TrustedHost"]
 
-  def export_getReservedSessions(self, userIDs=None, idPs=None):
+  def export_getReservedSessions(self, userIDs=None, idPs=None, check=False):
     """ Get reserved sessions
 
-        :param str session: session number
-        :param dict fieldsToUpdate: fields content that need to update
+        :param list userIDs: user IDs
+        :param list idPs: IdPs
+        :param bool check: if need to check session status by IdP
 
-        :return: S_OK()/S_ERROR()
+        :return: S_OK(list)/S_ERROR()
     """
-    # TODO: auth
     result = self.__checkAuth()
     if not result['OK']:
       return result
     user, ids = result["Value"]
-    if not user:
-      return self.__db.getReservedSessions(userIDs, idPs)
-    if not userIDs:
-      return self.__db.getReservedSessions(ids, idPs)
+    if user:
+      if userIDs:
+        for uid in userIDs:
+          if uid not in ids:
+            return S_ERROR('%s user not have access to %s ID information.' % (user, sID))
+      else:
+        userIDs = ids
+    result = self.__db.getReservedSessions(userIDs, idPs)
+    if not result['OK']:
+      return result
+    data = {}
+    for sDict in result['Value']:
+      if sDict['Provider'] not in data:
+        data[sDict['Provider']] = []
+      data[sDict['Provider']].append(sDict['Session'])
     
-    for uid in userIDs:
-      if uid not in ids:
-        return S_ERROR('%s user not have access to %s ID information.' % (user, sID))
-    return self.__db.getReservedSessions(userIDs, idPs)
+    sessionList = []
+    for idP, sessions in data.items():
+      if not check:
+        sessionList.append(session)
+        continue
+      result = IdProviderFactory().getIdProvider(provider, sessionManager=self.__db)
+      if not result['OK']:
+        return result
+      provObj = result['Value']
+      for session in sessions:
+        if provObj.checkStatus(session)['OK']:
+          sessionList.append(session)
+      
+    return S_OK(sessionList)
 
   types_updateSession = [str, dict]
   auth_updateSession = ["authenticated", "TrustedHost"]

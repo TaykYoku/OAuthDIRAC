@@ -12,11 +12,6 @@ from datetime import datetime
 
 from DIRAC import gConfig, S_OK, S_ERROR, gLogger
 from DIRAC.Core.Base.DB import DB
-# from DIRAC.ConfigurationSystem.Client.CSAPI import CSAPI
-# from DIRAC.ConfigurationSystem.Client.Helpers.Registry import getGroupsForDN, getUsernameForID, getEmailsForGroup
-# from DIRAC.Resources.IdProvider.IdProviderFactory import IdProviderFactory
-#from DIRAC.Resources.ProxyProvider.ProxyProviderFactory import ProxyProviderFactory
-#from DIRAC.FrameworkSystem.Client.NotificationClient import NotificationClient
 
 __RCSID__ = "$Id$"
 
@@ -164,7 +159,7 @@ class OAuthDB(DB):
 
         :return: S_OK(list)/S_ERROR() -- list contain dictionaries with information
     """
-    conn = ['Reserved = "yes"']
+    conn = ['Reserved = "yes" AND Status = "authed"']
     if idPs:
       conn.append('Provider IN ("%s")' % '", "'.join(idPs))
     if userIDs:
