@@ -14,7 +14,7 @@ from DIRAC import gConfig, S_OK, S_ERROR, gLogger
 from DIRAC.Core.Base.DB import DB
 # from DIRAC.ConfigurationSystem.Client.CSAPI import CSAPI
 # from DIRAC.ConfigurationSystem.Client.Helpers.Registry import getGroupsForDN, getUsernameForID, getEmailsForGroup
-from DIRAC.Resources.IdProvider.IdProviderFactory import IdProviderFactory
+# from DIRAC.Resources.IdProvider.IdProviderFactory import IdProviderFactory
 #from DIRAC.Resources.ProxyProvider.ProxyProviderFactory import ProxyProviderFactory
 #from DIRAC.FrameworkSystem.Client.NotificationClient import NotificationClient
 
@@ -225,24 +225,43 @@ class OAuthDB(DB):
 
     return S_OK(result['Value'][0][0]) if result['OK'] else result
 
-  def cleanZombieSessions(self):
+  def getZombieSessions(self):
     """ Kill sessions with old states
+          SESSION_AUTHED = "authed"           kill if reserved sessions > 1 by ID and IdP
+          SESSION_FAILED = "failed"           kill if last access > 15 min ago
+          SESSION_PREPARED = "prepared"       kill if last access > 5 min ago
+          SESSION_PROGRESS = "in progress"    kill if last access > 10 min ago
+          SESSION_REDIRECT = "redirect"       kill if last access > 5 min ago
+          SESSION_FINISHING = "finishing"     kill if last access > 5 min ago
     
-        :return: S_OK(int)/S_ERROR()
+        :return: S_OK(dict)/S_ERROR() -- contain dictionary
     """
-    result = self.__getFields(['Session'], conn='TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) > 43200')
+    # get session not in ["authed", "failed", "prepared", "in progress", "redirect", "finishing"]
+    # 
+    conn = ['(Status NOT IN ("authed", "failed", "prepared", "in progress", "redirect", "finishing"))']
+    conn.append('(Status IN ("prepared", "redirect", "finishing") AND TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) > 300)')
+    conn.append('(Status = "in progress" AND TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) > 600)')
+    conn.append('(Status = "failed" AND TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) > 600)')
+    conn.append('(Status = "authed" AND Reserved = "no" AND TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) > 86400)')
+    result = self.__getFields(['Session', 'Provider'], conn=' OR '.join(conn))
     if not result['OK']:
       return result
+    zombies = {}
     sessions = result['Value']
     self.log.info('Found %s old sessions for cleaning' % len(sessions))
     for i in range(0, len(sessions)):
       # If its reserved session
-      if re.match('^reserved_.*', sessions[i]['Session']):
-        continue
-      if sessions[i].get('Session'):
-        result = self.logOutSession(sessions[i]['Session'])
-        self.log.debug(result['Message'] or result['Value'])
-    return S_OK(len(sessions))
+      # if re.match('^reserved_.*', sessions[i]['Session']):
+      #   continue
+      if 'Session' in sessions[i]:
+        session = sessions[i]['Session']
+        provider = sessions[i]['Provider']
+        if provider not in zombies:
+          zombies[provider] = []
+        zombies[provider].append(session)
+        # result = self.logOutSession(sessions[i]['Session'])
+        # self.log.debug(result['Message'] or result['Value'])
+    return S_OK(zombies)
 
   def killSession(self, session):
     """ Remove session

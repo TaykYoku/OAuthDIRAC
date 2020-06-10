@@ -187,20 +187,25 @@ class OAuthManagerHandler(RequestHandler):
         :return: S_OK()/S_ERROR()
     """
     cls.log.info("Kill zombie sessions")
-    # SESSION_READY = "ready"
-    # SESSION_FAILED = "failed"
-    # SESSION_RESERVED = "reserved"
-    # SESSION_PREPARED = "prepared"
-    # SESSION_PROGRESS = "in progress"
-    # SESSION_NEEDAUTH = "needToAuth"
-    # SESSION_FINISHING = "finishing"
-    # # "prepared", "in progress", 15 * 60
-    #
-    result = self.__db.cleanZombieSessions()
+    result = cls.__db.getZombieSessions()
     if not result['OK']:
-      gLogger.error(result['Message'])
+      gLogger.error('Cannot clean zombies: %s' % result['Message'])
       return result
-    gLogger.notice("Cleaning is done!")
+    for idP, sessions in result['Value'].items():
+      result = IdProviderFactory().getIdProvider(idP, sessionManager=cls.__db)
+      if not result['OK']:
+        cls.log.error('Cannot log out %s sessions: %s' % (sessions, result['Message']))
+        for session in sessions:
+          cls.__db.killSession(session)
+        continue
+      provObj = result['Value']
+      for session in sessions:
+        result = provObj.logOut(session)
+        if not result['OK']:
+          cls.log.error(result['Message'])
+        cls.__db.killSession(session)
+
+    cls.log.notice("Cleaning is done!")
     return S_OK()
 
   @classmethod
@@ -209,10 +214,11 @@ class OAuthManagerHandler(RequestHandler):
     """
     cls.__db = OAuthDB()
     # gThreadScheduler.addPeriodicTask(15 * 60, cls.__refreshReservedSessions)
-    # gThreadScheduler.addPeriodicTask(15 * 60, cls.__refreshReservedSessions)
-    # gThreadScheduler.addPeriodicTask(3600, cls.__db.cleanZombieSessions)
+    gThreadScheduler.addPeriodicTask(3600, cls.__cleanOAuthDB)
     gThreadScheduler.addPeriodicTask(3600, cls.__updateSessionsFromDB) # TODO: update all
-    result = cls.__updateSessionsFromDB()
+    result = cls.__cleanOAuthDB()
+    if result['OK']:
+      result = cls.__updateSessionsFromDB()
     return cls.__refreshProfiles() if result['OK'] else result
 
   @classmethod
@@ -245,10 +251,10 @@ class OAuthManagerHandler(RequestHandler):
               result = provObj.getUserProfile(session)
               if result['OK']:
                 dns = result['Value']['UsrOptns']['DNs']
-                cacheData = cls.__getProfiles(userID=uid) or {}
                 if dns:
+                  cacheData = cls.__getProfiles(userID=uid) or {}
                   cacheData['DNs'] = dns
-                cls.__addProfiles({uid: cacheData})
+                  cls.__addProfiles({uid: cacheData})
                 continue
 
           if not result['OK']:
@@ -317,7 +323,7 @@ class OAuthManagerHandler(RequestHandler):
     return S_OK(data)
   
   types_getSessionsInfo = []
-  auth_getIdProfiles = ["authenticated", "TrustedHost"]
+  auth_getSessionsInfo = ["authenticated", "TrustedHost"]
 
   def export_getSessionsInfo(self, session=None, userID=None):
     """ Return fresh info from identity providers about users with actual sessions
@@ -466,11 +472,12 @@ class OAuthManagerHandler(RequestHandler):
     userID = parseDict['UsrOptns']['ID']
     result = getUsernameForID(userID)
     if not result['OK']:
-      status = 'authed and notify'
-
+      status = 'failed'
+      comment = '%s ID is not registred in the DIRAC.'
       result = self.__registerNewUser(provider, parseDict)
-      if not result['OK']:
-        return result
+      if result['OK']:
+        comment += ' Administrators have been notified about you.'
+      comment += ' Please, contact the DIRAC administrators.'
     
     else:
       # This session to reserve?
@@ -523,6 +530,7 @@ class OAuthManagerHandler(RequestHandler):
     mail['body'] += "\nUser profile:\n%s" % pprint.pformat(parseDict['UsrOptns'])
     mail['body'] += "\n\n------"
     mail['body'] += "\n This is a notification from the DIRAC OAuthManager service, please do not reply.\n"
+    result = S_OK()
     for addresses in getEmailsForGroup('dirac_admin'):
       result = NotificationClient().sendMail(addresses, mail['subject'], mail['body'], localAttempt=False)
       if not result['OK']:
@@ -532,7 +540,7 @@ class OAuthManagerHandler(RequestHandler):
     return result
 
   types_updateSession = [str, dict]
-  auth_getIdProfiles = ["authenticated", "TrustedHost"]
+  auth_updateSession = ["authenticated", "TrustedHost"]
 
   def export_updateSession(self, session, fieldsToUpdate):
     """ Update session record
@@ -547,7 +555,7 @@ class OAuthManagerHandler(RequestHandler):
     return self.__db.updateSession(session, fieldsToUpdate) if res['OK'] else res
 
   types_killSession = [str]
-  auth_getIdProfiles = ["authenticated", "TrustedHost"]
+  auth_killSession = ["authenticated", "TrustedHost"]
 
   def export_killSession(self, session):
     """ Remove session record from DB
@@ -561,12 +569,13 @@ class OAuthManagerHandler(RequestHandler):
     return self.__db.killSession(session) if res['OK'] else res
 
   types_logOutSession = [str]
-  auth_getIdProfiles = ["authenticated", "TrustedHost"]
+  auth_logOutSession = ["authenticated", "TrustedHost"]
 
-  def export_logOutSession(self, session):
+  def export_logOutSession(self, session, provObj=None):
     """ Remove session record from DB and logout form identity provider
     
         :param str session: session number
+        :param object provObj: provider object
 
         :return: S_OK()/S_ERROR()
     """
@@ -574,13 +583,16 @@ class OAuthManagerHandler(RequestHandler):
     if not result['OK']:
       return result
 
-    result = self.__db.getSessionProvider(session)
-    if result['OK']:
+    if not provObj:
+      result = self.__db.getSessionProvider(session)
+      if not result['OK']:
+        return result
       provider = result['Value']
       result = IdProviderFactory().getIdProvider(provider, sessionManager=self.__db)
-      if result['OK']:
-        provObj = result['Value']
-        result = provObj.logOut(session)
+      if not result['OK']:
+        return result
+      provObj = result['Value']
+    result = provObj.logOut(session)
     if not result['OK']:
       self.log.error(result['Message'])
     return self.__db.killSession(session)
@@ -614,7 +626,7 @@ class OAuthManagerHandler(RequestHandler):
     return result
   
   types_getSessionTokens = [str]
-  auth_getIdProfiles = ["authenticated", "TrustedHost"]
+  auth_getSessionTokens = ["authenticated", "TrustedHost"]
 
   def export_getSessionTokens(self, session):
     """ Get tokens by session number
@@ -627,7 +639,7 @@ class OAuthManagerHandler(RequestHandler):
     return self.__db.getSessionTokens(session) if res['OK'] else res
 
   types_createNewSession = [str]
-  auth_getIdProfiles = ["authenticated", "TrustedHost"]
+  auth_createNewSession = ["authenticated", "TrustedHost"]
 
   def export_createNewSession(self, provider, session=None):
     """ Generates a state string to be used in authorizations
