@@ -58,7 +58,7 @@ class OAuth2ProxyProvider(ProxyProvider):
       result = gOAuthManagerData.getIdPsForID(uid)
       if not result['OK']:
         return result
-      for idP in reuslt['Value']:  
+      for idP in result['Value']:  
         if idP in self.idProviders:
           result = IdProviderFactory().getIdProvider(idP)
           if not result['OK']:
