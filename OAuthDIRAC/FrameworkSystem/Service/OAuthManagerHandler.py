@@ -180,7 +180,7 @@ class OAuthManagerHandler(RequestHandler):
           continue
       cls.log.error('%s session not refreshed:' % session, result['Message'])
 
-  @staticmethod
+  @classmethod
   def __cleanOAuthDB(cls):
     """ Check OAuthDB for zombie sessions and clean
 
