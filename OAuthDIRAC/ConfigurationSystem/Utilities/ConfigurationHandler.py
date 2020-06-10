@@ -53,7 +53,8 @@ class ConfigurationHandler(WebHandler):
     optns = self.overpath.strip('/').split('/')
     if not optns or len(optns) > 1:
       raise WErr(404, "Wrone way")
-    result = S_ERROR('resquest is wrong')
+
+    result = S_ERROR('%s request unsuported' % optns[0])
     if optns[0] == 'get':
       if 'version' in self.args and (self.args.get('version') or '0') >= gConfigurationData.getVersion():
         self.finish()
@@ -72,12 +73,12 @@ class ConfigurationHandler(WebHandler):
         result = yield self.threadTask(gConfig.getSections, self.args['sections'])
       else:
         raise WErr(500, 'Invalid argument')
-    
+    elif optns[0] == 'getGroupsStatusByUsername':
+      result = yield self.threadTask(gProxyManager.getGroupsStatusByUsername(username), **self.args)
     elif any([optns[0] == m and re.match('^[a-z][A-z]+', m) for m in dir(Registry)]) and self.isRegisteredUser():
-      if optns[0] == 'getGroupsStatusByUsername':
-        result = yield self.threadTask(gProxyManager.getGroupsStatusByUsername(username), **self.args)
-      else:
-        raise WErr(500, '%s request unsuported' % optns[0])
+      result = yield self.threadTask(getattr(Registry, optns[0]), **self.args)
+    else:
+      raise WErr(500, '%s request unsuported' % optns[0])
       # result = yield self.threadTask(getattr(Registry, optns[0]), **self.args)
 
     if not result['OK']:
