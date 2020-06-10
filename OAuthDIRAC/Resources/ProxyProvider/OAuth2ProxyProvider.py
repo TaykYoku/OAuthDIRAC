@@ -65,8 +65,9 @@ class OAuth2ProxyProvider(ProxyProvider):
             return result
           idPObj = result['Value']
           result = idPObj.checkStatus(uID=uid)
-          if result['OK']:
-            return S_OK({'Status': 'ready'})
+          if not result['OK']:
+            self.log.error(result['Message'])
+          return S_OK({'Status': 'ready'})
     idP = self.idProviders[0]
     return S_OK({'Status': 'needToAuth', 'Comment': 'Need to auth with %s identity provider' % idP,
                  'Action': ['auth', [idP, 'inThread', '%s/auth/%s' % (getAuthAPI().strip('/'), idP)]]})

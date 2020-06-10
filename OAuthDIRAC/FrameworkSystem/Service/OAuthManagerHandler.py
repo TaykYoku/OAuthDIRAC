@@ -551,7 +551,7 @@ class OAuthManagerHandler(RequestHandler):
     """
     # TODO: auth
     res = self.__checkAuth(session)
-    return self.__db.getSessionLifetime(userIDs, idPs) if res['OK'] else res
+    return self.__db.getSessionLifetime(session) if res['OK'] else res
 
   types_getReservedSessions = []
   auth_getReservedSessions = ["authenticated", "TrustedHost"]
