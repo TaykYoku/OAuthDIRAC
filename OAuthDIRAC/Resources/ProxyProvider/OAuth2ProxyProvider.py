@@ -78,8 +78,8 @@ class OAuth2ProxyProvider(ProxyProvider):
       result = gOAuthManagerData.getIdPsForID(uid)
       if not result['OK']:
         return result
-      ids = list(set([uid]) + set(ids))
-      idPs = list(set(result['Value']) + set(idPs))
+      ids = list(set([uid] + ids))
+      idPs = list(set(result['Value'] + idPs))
     result = self.sessionManager.getReservedSessions(userIDs=ids, idPs=idPs, check=True)
     if result['OK'] and not result['Value']:
       return S_ERROR('Not found life sessions for %s to get %s proxy.' % (userName, userDN))
