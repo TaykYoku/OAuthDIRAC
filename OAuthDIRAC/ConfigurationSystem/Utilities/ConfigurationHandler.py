@@ -74,7 +74,7 @@ class ConfigurationHandler(WebHandler):
       else:
         raise WErr(500, 'Invalid argument')
     elif optns[0] == 'getGroupsStatusByUsername':
-      result = yield self.threadTask(gProxyManager.getGroupsStatusByUsername(username), **self.args)
+      result = yield self.threadTask(gProxyManager.getGroupsStatusByUsername, **self.args)
     elif any([optns[0] == m and re.match('^[a-z][A-z]+', m) for m in dir(Registry)]) and self.isRegisteredUser():
       result = yield self.threadTask(getattr(Registry, optns[0]), **self.args)
     else:
