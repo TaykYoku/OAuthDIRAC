@@ -8,11 +8,9 @@ import pprint
 from DIRAC import S_OK, S_ERROR, gLogger
 from DIRAC.Core.Security.X509Chain import X509Chain  # pylint: disable=import-error
 from DIRAC.Resources.IdProvider.IdProvider import IdProvider
-# from DIRAC.ConfigurationSystem.Client.Helpers import Registry
 from DIRAC.ConfigurationSystem.Client.Helpers.Resources import getProviderByAlias
 
 from OAuthDIRAC.FrameworkSystem.Utilities.OAuth2 import OAuth2
-# from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerData import gOAuthManagerData
 
 __RCSID__ = "$Id$"
 
@@ -56,7 +54,7 @@ class OAuth2IdProvider(IdProvider):
     
     return S_OK(session)
 
-  # def getAccessToken(self, uid):
+  # def getGetLifeSessionForID(self, uid):
   #   """ Search access token
 
   #       :param str uid: user ID
@@ -71,35 +69,44 @@ class OAuth2IdProvider(IdProvider):
   #   if not result['OK']:
   #     return result
     
+  #   provider = self.parameters['ProviderName']
+  #   result = self.sessionManager.getReservedSessions(userIDs=[uID], idPs=[provider])
+  #   if not result['OK']:
+  #     return result
+  #   for data in result['Value']:
+  #     result = self.checkStatus(session=data['Session'])
+  #     if result['OK']:
+  #       result['Value'] = data
+  #       return result
+  #   return result
 
-
-  def checkStatus(self, session=None, uID=None):
+  def checkStatus(self, session):  #=None, uID=None):
     """ Read ready to work status of identity provider
 
         :param str session: if need to check session
-        :param str uID: user ID
 
         :return: S_OK(dict)/S_ERROR() -- dictionary contain fields:
                  - 'Status' with ready to work status[ready, needToAuth]
                  - 'AccessToken' with list of access token
     """
-    if not session and not uID:
-      return S_ERROR('Need set session or user ID.')
+    # if not session and not uID:
+    #   return S_ERROR('Need set session or user ID.')
 
     result = self.isSessionManagerAble()
     if not result['OK']:
       return result
 
-    if uID:
-      provider = self.parameters['ProviderName']
-      result = self.sessionManager.getReservedSessions(userIDs=[uID], idPs=[provider])
-      if not result['OK']:
-        return result
-      for data in result['Value']:
-        result = self.checkStatus(session=data['Session'])
-        if result['OK']:
-          return result
-      return result
+    # if uID:
+    #   provider = self.parameters['ProviderName']
+    #   result = self.sessionManager.getReservedSessions(userIDs=[uID], idPs=[provider])
+    #   if not result['OK']:
+    #     return result
+    #   for data in result['Value']:
+    #     result = self.checkStatus(session=data['Session'])
+    #     if result['OK']:
+    #       result['Value'] = data
+    #       return result
+    #   return result
 
     result = self.sessionManager.getSessionLifetime(session)
     if not result['OK']:

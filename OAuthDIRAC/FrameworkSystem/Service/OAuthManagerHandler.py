@@ -552,7 +552,7 @@ class OAuthManagerHandler(RequestHandler):
     # TODO: auth
     res = self.__checkAuth(session)
     return self.__db.getSessionLifetime(session) if res['OK'] else res
-  
+
   types_refreshSession = [str]
   auth_refreshSession = ["authenticated", "TrustedHost"]
 

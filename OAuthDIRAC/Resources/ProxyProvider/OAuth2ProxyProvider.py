@@ -40,9 +40,29 @@ class OAuth2ProxyProvider(ProxyProvider):
   def checkStatus(self, userDN):
     """ Read ready to work status of proxy provider
 
-        :param dict userDict: user description dictionary with possible fields:
-               FullName, UserName, DN, Email, DiracGroup
-        :param dict sessionDict: session dictionary
+        :param str userDN: user DN
+
+        :return: S_OK(dict)/S_ERROR() -- dictionary contain fields:
+                 - 'Status' with ready to work status[ready, needToAuth]
+                 - 'AccessTokens' with list of access token
+    """
+    result = self.__findReadySessions(userDN)
+    if result['OK']:
+      return S_OK({'Status': 'ready'})
+    self.log.error(result['Message'])
+    idP = self.idProviders[0]
+    return S_OK({'Status': 'needToAuth', 'Comment': 'Need to auth with %s identity provider' % idP,
+                 'Action': ['auth', [idP, 'inThread', '%s/auth/%s' % (getAuthAPI().strip('/'), idP)]]})
+
+    # self.oauth2 = OAuth2(self.parameters['IdProvider'])
+    # # TODO: Get reserved session for IDs and IdP
+    # self.idProvider.
+    # return self.idProvider.checkStatus(session) 
+
+  def __findReadySessions(self, userDN):
+    """ Read ready to work status of proxy provider
+
+        :param str userDN: user DN
 
         :return: S_OK(dict)/S_ERROR() -- dictionary contain fields:
                  - 'Status' with ready to work status[ready, needToAuth]
@@ -52,31 +72,34 @@ class OAuth2ProxyProvider(ProxyProvider):
     if not result['OK']:
       return result
     userName = result['Value']
-    userIDs = Registry.getIDsForUsername(userName)
-    
-    for uid in userIDs:
+    ids = []
+    idPs = []
+    for uid in Registry.getIDsForUsername(userName):
       result = gOAuthManagerData.getIdPsForID(uid)
       if not result['OK']:
         return result
-      for idP in result['Value']:  
-        if idP in self.idProviders:
-          result = IdProviderFactory().getIdProvider(idP)
-          if not result['OK']:
-            return result
-          idPObj = result['Value']
-          result = idPObj.checkStatus(uID=uid)
-          if not result['OK']:
-            self.log.error(result['Message'])
-          return S_OK({'Status': 'ready'})
-    idP = self.idProviders[0]
-    return S_OK({'Status': 'needToAuth', 'Comment': 'Need to auth with %s identity provider' % idP,
-                 'Action': ['auth', [idP, 'inThread', '%s/auth/%s' % (getAuthAPI().strip('/'), idP)]]})
+      ids = list(set([uid]) + set(ids))
+      idPs = list(set(result['Value']) + set(idPs))
+    result = self.sessionManager.getReservedSessions(userIDs=ids, idPs=idPs, check=True)
+    if result['OK'] and not result['Value']:
+      return S_ERROR('Not found life sessions for %s to get %s proxy.' % (userName, userDN))
 
-    # self.oauth2 = OAuth2(self.parameters['IdProvider'])
-    # # TODO: Get reserved session for IDs and IdP
-    # self.idProvider.
-    # return self.idProvider.checkStatus(session) 
-  
+
+
+    # for uid in userIDs:
+    #   result = gOAuthManagerData.getIdPsForID(uid)
+    #   if not result['OK']:
+    #     return result
+    #   for idP in result['Value']:  
+    #     if idP in self.idProviders:
+    #       result = IdProviderFactory().getIdProvider(idP)
+    #       if result['OK']:
+    #         idPObj = result['Value']
+    #         result = idPObj.checkStatus(uID=uid)
+    #         if result['OK']:
+    #           return S_OK()
+    return result
+    
   def getProxy(self, userDN):
     """ Generate user proxy with OIDC flow authentication
 
@@ -86,40 +109,49 @@ class OAuth2ProxyProvider(ProxyProvider):
 
         :return: S_OK/S_ERROR, Value is a proxy string
     """
-    result = self.checkStatus(userDN)
+    result = self.__findReadySessions(userDN)
     if not result['OK']:
       return result
-    if result['Value']['Status'] == 'needToAuth':
-      return S_ERROR('To get proxy need authentication.', result['Value'])
-    elif result['Value']['Status'] != 'ready':
-      return S_ERROR('Some unexpexted status.')
-
-    for session in result['Value']['Sessions']:
-      self.log.verbose('For proxy request use session:', session)
-      # Get tokens
-      result = gSessionManager.getSessionTokens(session)
+    for session in result['Value']:
+      result = gOAuthManagerData.getIdPForSession(session)
       if not result['OK']:
         return result
-      tokens = result['Value']
+      self.oauth2 = OAuth2(result['Value'])
+    # result = self.checkStatus(userDN)
+    # if not result['OK']:
+    #   return result
+    # if result['Value']['Status'] == 'needToAuth':
+    #   return S_ERROR('To get proxy need authentication.', result['Value'])
+    # elif result['Value']['Status'] != 'ready':
+    #   return S_ERROR('Some unexpexted status.')
+
+    # for session in result['Value']['Sessions']:
+      self.log.verbose('For proxy request use session:', session)
 
       # Get proxy request
-      result = self.__getProxyRequest(tokens['AccessToken'])
+      result = self.__getProxyRequest(session)
       if not result['OK']:
         self.log.error(result['Message'])
-        # Refresh tokens
-        tokens['State'] = session
-        result = IdProviderFactory().getIdProvider(idP)
-        if not result['OK']:
-          return result
-        idPObj = result['Value']
-        result = idPObj.fetchTokensAndUpdateSession(tokens)
+        result = gOAuthManagerData.refreshSession(session)
         if not result['OK']:
           self.log.error(result['Message'])
           continue
-        tokens = result['Value']
+        
+        
+        # # Refresh tokens
+        # tokens['State'] = session
+        # result = IdProviderFactory().getIdProvider(idP)
+        # if not result['OK']:
+        #   return result
+        # idPObj = result['Value']
+        # result = idPObj.fetchTokensAndUpdateSession(tokens)
+        # if not result['OK']:
+        #   self.log.error(result['Message'])
+        #   continue
+        # tokens = result['Value']
 
         # Try to get proxy request again
-        result = self.__getProxyRequest(tokens['AccessToken'])
+        result = self.__getProxyRequest(session)
         if not result['OK']:
           self.log.error(result['Message'])
           continue
@@ -144,14 +176,20 @@ class OAuth2ProxyProvider(ProxyProvider):
     DN = result['Value']['identity']
     return S_OK({'proxy': proxyStr, 'DN': DN})
 
-  def __getProxyRequest(self, accessToken):
+  def __getProxyRequest(self, session):
     """ Get user proxy from proxy provider
     
-        :param basestring accessToken: access token
+        :param str session: access token
 
         :return: S_OK(basestring)/S_ERROR()
     """
-    kwargs = {'access_token': accessToken}
+    # Get tokens
+    result = gSessionManager.getSessionTokens(session)
+    if not result['OK']:
+      return result
+    tokens = result['Value']
+
+    kwargs = {'access_token': tokens['AccessToken']}
     kwargs['access_type'] = 'offline'
     kwargs['proxylifetime'] = self.parameters['MaxProxyLifetime'] or 3600 * 24
     
