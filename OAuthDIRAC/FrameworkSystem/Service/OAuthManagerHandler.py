@@ -565,8 +565,19 @@ class OAuthManagerHandler(RequestHandler):
         :return: S_OK()/S_ERROR()
     """
     # TODO: auth
-    res = self.__checkAuth(session)
-    return self.__db.getReservedSessions(userIDs, idPs) if res['OK'] else res
+    result = self.__checkAuth()
+    if not result['OK']:
+      return result
+    user, ids = result["Value"]
+    if not user:
+      return self.__db.getReservedSessions(userIDs, idPs)
+    if not userIDs:
+      return self.__db.getReservedSessions(ids, idPs)
+    
+    for uid in userIDs:
+      if uid not in ids:
+        return S_ERROR('%s user not have access to %s ID information.' % (user, sID))
+    return self.__db.getReservedSessions(userIDs, idPs)
 
   types_updateSession = [str, dict]
   auth_updateSession = ["authenticated", "TrustedHost"]
