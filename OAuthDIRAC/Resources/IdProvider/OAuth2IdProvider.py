@@ -95,8 +95,8 @@ class OAuth2IdProvider(IdProvider):
       result = self.sessionManager.getReservedSessions(userIDs=[uID], idPs=[provider])
       if not result['OK']:
         return result
-      for session in result['Value']:
-        result = self.checkStatus(session=session)
+      for data in result['Value']:
+        result = self.checkStatus(session=data['Session'])
         if result['OK']:
           return result
       return result
