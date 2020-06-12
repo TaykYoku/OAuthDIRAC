@@ -118,6 +118,9 @@ class OAuth2ProxyProvider(ProxyProvider):
       if not result['OK']:
         return result
       sessions = result['Value']
+    if not sessions:
+      return S_ERROR('No sessions found for proxy request.')
+      
     for session in sessions:
       result = gOAuthManagerData.getIdPForSession(session)
       if not result['OK']:
@@ -144,6 +147,9 @@ class OAuth2ProxyProvider(ProxyProvider):
           if not result['OK']:
             self.log.error(result['Message'])
           continue
+        if not result['Value']:
+          result = S_ERROR('Returned proxy is empty.')
+          continue
       
       self.log.info('Proxy is taken')
       break
@@ -151,8 +157,8 @@ class OAuth2ProxyProvider(ProxyProvider):
     if not result['OK']:
       return result
     proxyStr = result['Value']
-    if not proxyStr:
-      return S_ERROR('Returned proxy is empty.')
+    # if not proxyStr:
+    #   return S_ERROR('Returned proxy is empty.')
 
     # Get DN
     chain = X509Chain()
