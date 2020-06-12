@@ -120,7 +120,7 @@ class OAuth2ProxyProvider(ProxyProvider):
       sessions = result['Value']
     if not sessions:
       return S_ERROR('No sessions found for proxy request.')
-      
+
     for session in sessions:
       result = gOAuthManagerData.getIdPForSession(session)
       if not result['OK']:
@@ -156,7 +156,7 @@ class OAuth2ProxyProvider(ProxyProvider):
 
     if not result['OK']:
       return result
-    proxyStr = result['Value']
+    proxyStr = result['Value'].encode("utf-8")
     # if not proxyStr:
     #   return S_ERROR('Returned proxy is empty.')
 
