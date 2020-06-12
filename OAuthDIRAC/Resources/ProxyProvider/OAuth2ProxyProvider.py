@@ -57,7 +57,7 @@ class OAuth2ProxyProvider(ProxyProvider):
                    'Action': ['auth', [idP, 'inThread', '%s/auth/%s' % (getAuthAPI().strip('/'), idP)]]})
     
     # Proxy uploaded in DB?
-    result = self.proxyManager._query('SELECT * FROM ProxyDB_CleanProxies WHERE UserDN = "%s" AND TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ExpirationTime) > %s' % (userDN, 12 * 3600)])
+    result = self.proxyManager._query('SELECT * FROM ProxyDB_CleanProxies WHERE UserDN = "%s" AND TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ExpirationTime) > %s' % (userDN, 12 * 3600))
     if not result['OK']:
       self.log.error(result['Message'])
       return result
