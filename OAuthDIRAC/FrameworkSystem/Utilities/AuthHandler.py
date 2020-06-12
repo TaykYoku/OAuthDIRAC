@@ -6,8 +6,8 @@ from tornado import web, gen
 from tornado.template import Template
 
 from DIRAC import S_OK, S_ERROR, gConfig, gLogger
-from DIRAC.ConfigurationSystem.Client.Helpers import Resources
 from DIRAC.FrameworkSystem.Client.NotificationClient import NotificationClient
+from DIRAC.ConfigurationSystem.Client.Helpers.Resources import getProvidersForInstance
 
 from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import gSessionManager
 
@@ -51,7 +51,7 @@ class AuthHandler(WebHandler):
     optns = self.overpath.strip('/').split('/')
     if not optns or len(optns) > 2:
       raise WErr(404, "Wrone way")
-    result = Resources.getProvidersForInstance('Id')
+    result = getProvidersForInstance('Id')
     if not result['OK']:
       raise WErr(500, result['Message'])
     idPs = result['Value']

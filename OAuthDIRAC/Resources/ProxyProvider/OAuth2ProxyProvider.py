@@ -7,9 +7,9 @@ import datetime
 from DIRAC import S_OK, S_ERROR, gLogger
 from DIRAC.Core.Security.X509Chain import X509Chain  # pylint: disable=import-error
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry
+from DIRAC.ConfigurationSystem.Client.Helpers.Resources import getProvidersForInstance
 from DIRAC.ConfigurationSystem.Client.Utilities import getAuthAPI
 from DIRAC.Resources.ProxyProvider.ProxyProvider import ProxyProvider
-from DIRAC.Resources.IdProvider.IdProviderFactory import IdProviderFactory
 
 from OAuthDIRAC.FrameworkSystem.Utilities.OAuth2 import OAuth2
 from OAuthDIRAC.FrameworkSystem.Client.OAuthManagerClient import gSessionManager
@@ -31,7 +31,7 @@ class OAuth2ProxyProvider(ProxyProvider):
     if not isinstance(self.parameters['IdProvider'], list):
       self.idProviders = [self.parameters['IdProvider']]
     if not self.idProviders:
-      result = Registry.getProvidersForInstance('Id', providerType='OAuth2')
+      result = getProvidersForInstance('Id', providerType='OAuth2')
       if not result['OK']:
         return result
       self.idProviders = result['Value']
@@ -47,12 +47,28 @@ class OAuth2ProxyProvider(ProxyProvider):
                  - 'AccessTokens' with list of access token
     """
     result = self.__findReadySessions(userDN)
-    if result['OK']:
-      return S_OK({'Status': 'ready'})
-    self.log.error(result['Message'])
-    idP = self.idProviders[0]
-    return S_OK({'Status': 'needToAuth', 'Comment': 'Need to auth with %s identity provider' % idP,
-                 'Action': ['auth', [idP, 'inThread', '%s/auth/%s' % (getAuthAPI().strip('/'), idP)]]})
+    if not result['OK']:
+      self.log.error(result['Message'])
+      return result
+    sessions = result['Value']
+    if not sessions:
+      idP = self.idProviders[0]
+      return S_OK({'Status': 'needToAuth', 'Comment': 'Need to auth with %s identity provider' % idP,
+                   'Action': ['auth', [idP, 'inThread', '%s/auth/%s' % (getAuthAPI().strip('/'), idP)]]})
+    
+    # Proxy uploaded in DB?
+    result = self.proxyManager._query('SELECT * FROM ProxyDB_CleanProxies WHERE UserDN = "%s" AND TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ExpirationTime) > %s' % (userDN, 12 * 3600)])
+    if not result['OK']:
+      self.log.error(result['Message'])
+      return result
+    if not result['Value']:
+      # Proxy not uploaded in DB, lets generate and upload
+      result = self.getProxy(userDN, sessions=sessions)
+      if not result['OK']:
+        self.log.error(result['Message'])
+        return result
+
+    return S_OK({'Status': 'ready'})
 
     # self.oauth2 = OAuth2(self.parameters['IdProvider'])
     # # TODO: Get reserved session for IDs and IdP
@@ -80,52 +96,31 @@ class OAuth2ProxyProvider(ProxyProvider):
         return result
       ids = list(set([uid] + ids))
       idPs = list(set(result['Value'] + idPs))
-    result = gSessionManager.getReservedSessions(userIDs=ids, idPs=idPs, check=True)
-    if result['OK'] and not result['Value']:
-      return S_ERROR('Not found life sessions for %s to get %s proxy.' % (userName, userDN))
+    return gSessionManager.getReservedSessions(userIDs=ids, idPs=idPs, check=True)
+    # if result['OK'] and not result['Value']:
+    #   return S_ERROR('Not found life sessions for %s to get %s proxy.' % (userName, userDN))
 
-
-
-    # for uid in userIDs:
-    #   result = gOAuthManagerData.getIdPsForID(uid)
-    #   if not result['OK']:
-    #     return result
-    #   for idP in result['Value']:  
-    #     if idP in self.idProviders:
-    #       result = IdProviderFactory().getIdProvider(idP)
-    #       if result['OK']:
-    #         idPObj = result['Value']
-    #         result = idPObj.checkStatus(uID=uid)
-    #         if result['OK']:
-    #           return S_OK()
-    return result
+    # return result
     
-  def getProxy(self, userDN):
+  def getProxy(self, userDN, sessions=None):
     """ Generate user proxy with OIDC flow authentication
 
-        :param dict userDict: user description dictionary with possible fields:
-               FullName, UserName, DN, Email, DiracGroup
-        :param dict sessionDict: session dictionary
+        :param str userDN: user DN
+        :param list sessions: sessions
 
         :return: S_OK/S_ERROR, Value is a proxy string
     """
-    result = self.__findReadySessions(userDN)
-    if not result['OK']:
-      return result
-    for session in result['Value']:
+    if not sessions:
+      result = self.__findReadySessions(userDN)
+      if not result['OK']:
+        return result
+      sessions = result['Value']
+    for session in sessions:
       result = gOAuthManagerData.getIdPForSession(session)
       if not result['OK']:
         return result
       self.oauth2 = OAuth2(result['Value'])
-    # result = self.checkStatus(userDN)
-    # if not result['OK']:
-    #   return result
-    # if result['Value']['Status'] == 'needToAuth':
-    #   return S_ERROR('To get proxy need authentication.', result['Value'])
-    # elif result['Value']['Status'] != 'ready':
-    #   return S_ERROR('Some unexpexted status.')
 
-    # for session in result['Value']['Sessions']:
       self.log.verbose('For proxy request use session:', session)
 
       # Get proxy request
@@ -136,24 +131,14 @@ class OAuth2ProxyProvider(ProxyProvider):
         if not result['OK']:
           self.log.error(result['Message'])
           continue
-        
-        
-        # # Refresh tokens
-        # tokens['State'] = session
-        # result = IdProviderFactory().getIdProvider(idP)
-        # if not result['OK']:
-        #   return result
-        # idPObj = result['Value']
-        # result = idPObj.fetchTokensAndUpdateSession(tokens)
-        # if not result['OK']:
-        #   self.log.error(result['Message'])
-        #   continue
-        # tokens = result['Value']
 
         # Try to get proxy request again
         result = self.__getProxyRequest(session)
         if not result['OK']:
           self.log.error(result['Message'])
+          result = gSessionManager.logOutSession(session)
+          if not result['OK']:
+            self.log.error(result['Message'])
           continue
       
       self.log.info('Proxy is taken')
@@ -174,7 +159,17 @@ class OAuth2ProxyProvider(ProxyProvider):
     if not result['OK']:
       return result
     DN = result['Value']['identity']
-    return S_OK({'proxy': proxyStr, 'DN': DN})
+    
+    # Check
+    if DN != userDN:
+      return S_ERROR('Received proxy DN "%s" not match with requested DN "%s"' % (DN, userDN))
+    
+    # Store proxy in proxy manager
+    result = self.proxyManager.__storeProxy(DN, chain)
+    if not result['OK']:
+      return result
+
+    return S_OK(chain)  # {'proxy': proxyStr, 'DN': DN})
 
   def __getProxyRequest(self, session):
     """ Get user proxy from proxy provider
