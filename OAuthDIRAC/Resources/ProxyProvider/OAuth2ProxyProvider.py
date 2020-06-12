@@ -88,15 +88,18 @@ class OAuth2ProxyProvider(ProxyProvider):
     if not result['OK']:
       return result
     userName = result['Value']
-    ids = []
-    idPs = []
-    for uid in Registry.getIDsForUsername(userName):
-      result = gOAuthManagerData.getIdPsForID(uid)
-      if not result['OK']:
-        return result
-      ids = list(set([uid] + ids))
-      idPs = list(set(result['Value'] + idPs))
-    return gSessionManager.getReservedSessions(userIDs=ids, idPs=idPs, check=True)
+    # ids = []
+    # idPs = []
+    # for uid in Registry.getIDsForUsername(userName):
+    #   result = gOAuthManagerData.getIdPsForID(uid)
+    #   if not result['OK']:
+    #     return result
+      
+    #   ids = list(set([uid] + ids))
+    #   idPs = list(set(result['Value'] + idPs))
+    # return gSessionManager.getReservedSessions(userIDs=ids, idPs=idPs, check=True)
+    return gSessionManager.getReservedSessions(userIDs=Registry.getIDsForUsername(userName), idPs=self.idProviders, check=True)
+
     # if result['OK'] and not result['Value']:
     #   return S_ERROR('Not found life sessions for %s to get %s proxy.' % (userName, userDN))
 
@@ -119,6 +122,7 @@ class OAuth2ProxyProvider(ProxyProvider):
       result = gOAuthManagerData.getIdPForSession(session)
       if not result['OK']:
         return result
+      
       self.oauth2 = OAuth2(result['Value'])
 
       self.log.verbose('For proxy request use session:', session)
