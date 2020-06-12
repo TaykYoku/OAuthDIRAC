@@ -613,7 +613,7 @@ class OAuthManagerHandler(RequestHandler):
       if not check:
         sessionList += sessions
         continue
-      result = IdProviderFactory().getIdProvider(provider, sessionManager=self.__db)
+      result = IdProviderFactory().getIdProvider(idP, sessionManager=self.__db)
       if not result['OK']:
         return result
       provObj = result['Value']
