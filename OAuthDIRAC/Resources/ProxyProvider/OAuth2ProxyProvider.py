@@ -4,7 +4,7 @@
 import pprint
 import datetime
 
-from DIRAC import S_OK, S_ERROR, gLogger
+from DIRAC import S_OK, S_ERROR
 from DIRAC.Core.Security.X509Chain import X509Chain  # pylint: disable=import-error
 from DIRAC.ConfigurationSystem.Client.Helpers import Registry
 from DIRAC.ConfigurationSystem.Client.Helpers.Resources import getProvidersForInstance
@@ -22,10 +22,10 @@ class OAuth2ProxyProvider(ProxyProvider):
 
   def __init__(self, parameters=None):
     super(OAuth2ProxyProvider, self).__init__(parameters)
-    self.log = gLogger.getSubLogger(__name__)
+    #self.log = gLogger.getSubLogger(__name__)
 
   def setParameters(self, parameters):
-    self.log = gLogger.getSubLogger('%s/%s' % (__name__, parameters['ProviderName']))
+    #self.log = gLogger.getSubLogger('%s/%s' % (__name__, parameters['ProviderName']))
     self.parameters = parameters
     self.idProviders = self.parameters['IdProvider'] or []
     if not isinstance(self.parameters['IdProvider'], list):
