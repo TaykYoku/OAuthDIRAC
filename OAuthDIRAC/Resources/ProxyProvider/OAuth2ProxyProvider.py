@@ -165,7 +165,7 @@ class OAuth2ProxyProvider(ProxyProvider):
       return S_ERROR('Received proxy DN "%s" not match with requested DN "%s"' % (DN, userDN))
     
     # Store proxy in proxy manager
-    result = self.proxyManager.__storeProxy(DN, chain)
+    result = self.proxyManager._storeProxy(DN, chain)
     if not result['OK']:
       return result
 
