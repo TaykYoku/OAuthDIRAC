@@ -89,30 +89,15 @@ class OAuth2IdProvider(IdProvider):
                  - 'Status' with ready to work status[ready, needToAuth]
                  - 'AccessToken' with list of access token
     """
-    # if not session and not uID:
-    #   return S_ERROR('Need set session or user ID.')
-
     result = self.isSessionManagerAble()
     if not result['OK']:
       return result
-
-    # if uID:
-    #   provider = self.parameters['ProviderName']
-    #   result = self.sessionManager.getReservedSessions(userIDs=[uID], idPs=[provider])
-    #   if not result['OK']:
-    #     return result
-    #   for data in result['Value']:
-    #     result = self.checkStatus(session=data['Session'])
-    #     if result['OK']:
-    #       result['Value'] = data
-    #       return result
-    #   return result
 
     result = self.sessionManager.getSessionLifetime(session)
     if not result['OK']:
       return result
     if result['Value'] < 10 * 60:
-      self.log.debug('%s tokens are expired, try to refresh' % session)
+      self.log.debug('%s session tokens are expired, try to refresh' % session)
       result = self.sessionManager.getSessionTokens(session)
       if not result['OK']:
         return result
@@ -124,7 +109,6 @@ class OAuth2IdProvider(IdProvider):
           return S_ERROR('No refresh token found in response.')
         return self.sessionManager.updateSession(session, tokens)
       kill = self.sessionManager.killSession(session)
-      # return S_OK({'Status': 'fail', 'Comment': result['Message']}) if kill['OK'] else kill
       return result if kill['OK'] else kill
 
     return S_OK()

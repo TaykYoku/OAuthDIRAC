@@ -231,8 +231,6 @@ class OAuthDB(DB):
     
         :return: S_OK(dict)/S_ERROR() -- contain dictionary
     """
-    # get session not in ["authed", "failed", "prepared", "in progress", "redirect", "finishing"]
-    # 
     conn = ['(Status NOT IN ("authed", "failed", "prepared", "in progress", "redirect", "finishing"))']
     conn.append('(Status IN ("prepared", "redirect", "finishing") AND TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) > 300)')
     conn.append('(Status = "in progress" AND TIMESTAMPDIFF(SECOND,LastAccess,UTC_TIMESTAMP()) > 600)')
@@ -245,17 +243,12 @@ class OAuthDB(DB):
     sessions = result['Value']
     self.log.info('Found %s old sessions for cleaning' % len(sessions))
     for i in range(0, len(sessions)):
-      # If its reserved session
-      # if re.match('^reserved_.*', sessions[i]['Session']):
-      #   continue
       if 'Session' in sessions[i]:
         session = sessions[i]['Session']
         provider = sessions[i]['Provider']
         if provider not in zombies:
           zombies[provider] = []
         zombies[provider].append(session)
-        # result = self.logOutSession(sessions[i]['Session'])
-        # self.log.debug(result['Message'] or result['Value'])
     return S_OK(zombies)
 
   def killSession(self, session):
@@ -265,6 +258,7 @@ class OAuthDB(DB):
 
         :return: S_OK()/S_ERROR()
     """
+    self.log.verbose(session, 'session kill..')
     return self.deleteEntries('Sessions', condDict={'Session': session})
   
   def updateSession(self, session, fieldsToUpdate=None, conn=None, condDict=None):
