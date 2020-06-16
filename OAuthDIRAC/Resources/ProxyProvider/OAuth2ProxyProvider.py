@@ -22,10 +22,8 @@ class OAuth2ProxyProvider(ProxyProvider):
 
   def __init__(self, parameters=None):
     super(OAuth2ProxyProvider, self).__init__(parameters)
-    #self.log = gLogger.getSubLogger(__name__)
 
   def setParameters(self, parameters):
-    #self.log = gLogger.getSubLogger('%s/%s' % (__name__, parameters['ProviderName']))
     self.parameters = parameters
     self.idProviders = self.parameters['IdProvider'] or []
     if not isinstance(self.parameters['IdProvider'], list):
@@ -69,11 +67,6 @@ class OAuth2ProxyProvider(ProxyProvider):
         return result
 
     return S_OK({'Status': 'ready'})
-
-    # self.oauth2 = OAuth2(self.parameters['IdProvider'])
-    # # TODO: Get reserved session for IDs and IdP
-    # self.idProvider.
-    # return self.idProvider.checkStatus(session) 
 
   def __findReadySessions(self, userDN):
     """ Read ready to work status of proxy provider
@@ -157,8 +150,6 @@ class OAuth2ProxyProvider(ProxyProvider):
     if not result['OK']:
       return result
     proxyStr = result['Value'].encode("utf-8")
-    # if not proxyStr:
-    #   return S_ERROR('Returned proxy is empty.')
 
     # Get DN
     chain = X509Chain()
